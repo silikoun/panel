@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "WooCommerce Scraper",
+  "version": "1.0",
+  "description": "Scrape WooCommerce product data",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

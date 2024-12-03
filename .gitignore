@@ -1,0 +1,7 @@
+.env
+vendor/
+composer.phar
+.DS_Store
+chat_logs/
+certs/
+*.log
