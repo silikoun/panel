@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     libxml2-dev \
     zip \
-    unzip
+    unzip \
+    gettext-base
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -44,16 +45,19 @@ RUN mkdir -p storage/logs storage/cache \
 RUN composer dump-autoload --optimize
 
 # Configure Apache
+RUN echo "Listen \${PORT:-80}" > /etc/apache2/ports.conf
 COPY docker/000-default.conf /etc/apache2/sites-available/000-default.conf
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf \
     && a2ensite 000-default.conf
 
-# Expose port (Railway will override this)
-EXPOSE ${PORT:-80}
-
 # Create start script
 COPY docker/start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
+
+# Set environment variables
+ENV PORT=80
+ENV APACHE_RUN_USER=www-data
+ENV APACHE_RUN_GROUP=www-data
 
 # Start script as entrypoint
 ENTRYPOINT ["/usr/local/bin/start.sh"]
