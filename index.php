@@ -6,8 +6,19 @@ session_start();
 use Dotenv\Dotenv;
 use GuzzleHttp\Client;
 
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+// Try to load .env file if it exists, otherwise use environment variables
+if (file_exists(__DIR__ . '/.env')) {
+    $dotenv = Dotenv::createImmutable(__DIR__);
+    $dotenv->load();
+}
+
+// Set environment variables if not already set
+if (!isset($_ENV['SUPABASE_URL'])) {
+    $_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL');
+}
+if (!isset($_ENV['SUPABASE_KEY'])) {
+    $_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY');
+}
 
 $isAuthenticated = isset($_SESSION['user']);
 $error = null;
