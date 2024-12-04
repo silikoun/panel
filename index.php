@@ -40,10 +40,19 @@ $isAuthenticated = isset($_SESSION['user']);
 $error = null;
 
 // Validate environment variables
-if (empty($_ENV['SUPABASE_URL']) || empty($_ENV['SUPABASE_KEY'])) {
-    error_log("Missing required environment variables");
+$missingVars = [];
+if (empty($_ENV['SUPABASE_URL'])) {
+    $missingVars[] = 'SUPABASE_URL';
+    error_log("Missing SUPABASE_URL - Please set this to: https://kgqwiwjayaydewyuygxt.supabase.co");
+}
+if (empty($_ENV['SUPABASE_KEY'])) {
+    $missingVars[] = 'SUPABASE_KEY';
+}
+
+if (!empty($missingVars)) {
+    error_log("Missing required environment variables: " . implode(', ', $missingVars));
     $isInitialized = false;
-    $error = 'System configuration error: Missing required environment variables';
+    $error = 'Missing environment variables: ' . implode(', ', $missingVars);
 } else {
     try {
         $client = new Client([

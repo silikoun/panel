@@ -54,11 +54,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    // Validate environment variables
-    if (empty($_ENV['SUPABASE_URL']) || empty($_ENV['SUPABASE_KEY'])) {
-        error_log("Missing required environment variables");
+    // Validate environment variables with specific messages
+    $missingVars = [];
+    if (empty($_ENV['SUPABASE_URL'])) {
+        $missingVars[] = 'SUPABASE_URL';
+        error_log("Missing SUPABASE_URL - Please set this to: https://kgqwiwjayaydewyuygxt.supabase.co");
+    }
+    if (empty($_ENV['SUPABASE_KEY'])) {
+        $missingVars[] = 'SUPABASE_KEY';
+    }
+
+    if (!empty($missingVars)) {
+        error_log("Missing required environment variables: " . implode(', ', $missingVars));
         ob_end_clean();
-        header('Location: login.php?error=1&message=' . urlencode('System configuration error'));
+        header('Location: login.php?error=1&message=' . urlencode('Missing environment variables: ' . implode(', ', $missingVars)));
         exit;
     }
 
