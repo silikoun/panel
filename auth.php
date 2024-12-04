@@ -9,21 +9,32 @@ error_reporting(E_ALL);
 require 'vendor/autoload.php';
 session_start();
 
-use Dotenv\Dotenv;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 
-// Initialize environment variables with defaults
-$_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL') ?: '';
-$_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY') ?: '';
+// Debug: Print all environment variables
+error_log("All environment variables:");
+error_log(print_r($_ENV, true));
+error_log("All getenv variables:");
+error_log(print_r(getenv(), true));
+
+// Try direct access first
+$supabaseUrl = $_SERVER['SUPABASE_URL'] ?? getenv('SUPABASE_URL') ?? '';
+$supabaseKey = $_SERVER['SUPABASE_KEY'] ?? getenv('SUPABASE_KEY') ?? '';
+
+// Set in $_ENV for consistency
+$_ENV['SUPABASE_URL'] = $supabaseUrl;
+$_ENV['SUPABASE_KEY'] = $supabaseKey;
 
 // Log environment variables for debugging
-error_log("SUPABASE_URL: " . $_ENV['SUPABASE_URL']);
+error_log("SUPABASE_URL (from _SERVER): " . ($_SERVER['SUPABASE_URL'] ?? 'not set'));
+error_log("SUPABASE_URL (from getenv): " . (getenv('SUPABASE_URL') ?: 'not set'));
+error_log("SUPABASE_URL (final): " . $_ENV['SUPABASE_URL']);
 error_log("SUPABASE_KEY length: " . strlen($_ENV['SUPABASE_KEY']));
 
 // Only try to load .env if it exists
 if (file_exists(__DIR__ . '/.env')) {
-    $dotenv = Dotenv::createImmutable(__DIR__);
+    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
     try {
         $dotenv->load();
     } catch (Exception $e) {
