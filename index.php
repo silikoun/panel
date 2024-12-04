@@ -11,9 +11,13 @@ error_log(print_r($_ENV, true));
 error_log("All getenv variables:");
 error_log(print_r(getenv(), true));
 
-// Try direct access first
-$supabaseUrl = $_SERVER['SUPABASE_URL'] ?? getenv('SUPABASE_URL') ?? '';
-$supabaseKey = $_SERVER['SUPABASE_KEY'] ?? getenv('SUPABASE_KEY') ?? '';
+// Try different case variations for environment variables
+$supabaseUrl = $_SERVER['SUPABASE_URL'] ?? $_SERVER['supabase_url'] ?? 
+               getenv('SUPABASE_URL') ?? getenv('supabase_url') ?? 
+               'https://kgqwiwjayaydewyuygxt.supabase.co'; // Fallback to known URL
+
+$supabaseKey = $_SERVER['SUPABASE_KEY'] ?? $_SERVER['supabase_key'] ?? 
+               getenv('SUPABASE_KEY') ?? getenv('supabase_key') ?? '';
 
 // Set in $_ENV for consistency
 $_ENV['SUPABASE_URL'] = $supabaseUrl;
@@ -43,7 +47,7 @@ $error = null;
 $missingVars = [];
 if (empty($_ENV['SUPABASE_URL'])) {
     $missingVars[] = 'SUPABASE_URL';
-    error_log("Missing SUPABASE_URL - Please set this to: https://kgqwiwjayaydewyuygxt.supabase.co");
+    error_log("Missing SUPABASE_URL - Using default: https://kgqwiwjayaydewyuygxt.supabase.co");
 }
 if (empty($_ENV['SUPABASE_KEY'])) {
     $missingVars[] = 'SUPABASE_KEY';
