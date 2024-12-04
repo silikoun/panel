@@ -11,22 +11,12 @@ error_log(print_r($_ENV, true));
 error_log("All getenv variables:");
 error_log(print_r(getenv(), true));
 
-// Try different case variations for environment variables
-$supabaseUrl = $_SERVER['SUPABASE_URL'] ?? $_SERVER['supabase_url'] ?? 
-               getenv('SUPABASE_URL') ?? getenv('supabase_url') ?? 
-               'https://kgqwiwjayaydewyuygxt.supabase.co'; // Fallback to known URL
-
-$supabaseKey = $_SERVER['SUPABASE_KEY'] ?? $_SERVER['supabase_key'] ?? 
-               getenv('SUPABASE_KEY') ?? getenv('supabase_key') ?? '';
-
-// Set in $_ENV for consistency
-$_ENV['SUPABASE_URL'] = $supabaseUrl;
-$_ENV['SUPABASE_KEY'] = $supabaseKey;
+// Set Supabase URL and Key
+$_ENV['SUPABASE_URL'] = 'https://kgqwiwjayaydewyuygxt.supabase.co';
+$_ENV['SUPABASE_KEY'] = $_SERVER['SUPABASE_KEY'] ?? getenv('SUPABASE_KEY') ?? '';
 
 // Log environment variables for debugging
-error_log("SUPABASE_URL (from _SERVER): " . ($_SERVER['SUPABASE_URL'] ?? 'not set'));
-error_log("SUPABASE_URL (from getenv): " . (getenv('SUPABASE_URL') ?: 'not set'));
-error_log("SUPABASE_URL (final): " . $_ENV['SUPABASE_URL']);
+error_log("SUPABASE_URL: " . $_ENV['SUPABASE_URL']);
 error_log("SUPABASE_KEY length: " . strlen($_ENV['SUPABASE_KEY']));
 
 // Only try to load .env if it exists
@@ -44,19 +34,10 @@ $isAuthenticated = isset($_SESSION['user']);
 $error = null;
 
 // Validate environment variables
-$missingVars = [];
-if (empty($_ENV['SUPABASE_URL'])) {
-    $missingVars[] = 'SUPABASE_URL';
-    error_log("Missing SUPABASE_URL - Using default: https://kgqwiwjayaydewyuygxt.supabase.co");
-}
 if (empty($_ENV['SUPABASE_KEY'])) {
-    $missingVars[] = 'SUPABASE_KEY';
-}
-
-if (!empty($missingVars)) {
-    error_log("Missing required environment variables: " . implode(', ', $missingVars));
+    error_log("Missing SUPABASE_KEY");
     $isInitialized = false;
-    $error = 'Missing environment variables: ' . implode(', ', $missingVars);
+    $error = 'Missing required environment variable: SUPABASE_KEY';
 } else {
     try {
         // Remove trailing slash from URL if present
