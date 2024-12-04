@@ -19,7 +19,7 @@ try {
             'apikey' => $_ENV['SUPABASE_KEY'],
             'Content-Type' => 'application/json'
         ],
-        'verify' => __DIR__ . '/certs/cacert.pem',
+        'verify' => false,
         'http_errors' => false
     ]);
     $isInitialized = true;
@@ -34,8 +34,13 @@ if (!isset($_SESSION['user'])) {
     header('Location: landing.php');
     exit;
 }
-?>
 
+// Get user's current token
+$currentToken = '';
+if (isset($_SESSION['user']['user']['user_metadata']['api_token'])) {
+    $currentToken = $_SESSION['user']['user']['user_metadata']['api_token'];
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -52,9 +57,9 @@ if (!isset($_SESSION['user'])) {
                 <span class="block sm:inline"><?php echo htmlspecialchars($error); ?></span>
             </div>
         <?php else: ?>
-            <!-- Dashboard -->
             <div class="max-w-4xl mx-auto">
-                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <!-- Header with Logout -->
                     <div class="flex justify-between items-center mb-6">
                         <h1 class="text-2xl font-bold">WooCommerce Dashboard</h1>
                         <form action="auth.php" method="POST" class="inline">
@@ -64,24 +69,16 @@ if (!isset($_SESSION['user'])) {
                             </button>
                         </form>
                     </div>
+
+                    <!-- API Token Section -->
                     <div class="mb-6">
                         <h2 class="text-xl font-semibold mb-4">API Configuration</h2>
                         <div class="bg-purple-50 p-6 rounded-lg">
-                            <?php
-                            // Get user's current token
-                            $currentToken = '';
-                            if (isset($_SESSION['user']['user']['user_metadata']['api_token'])) {
-                                $currentToken = $_SESSION['user']['user']['user_metadata']['api_token'];
-                            }
-                            ?>
                             <div class="flex justify-between items-center mb-4">
                                 <h3 class="text-lg font-semibold text-purple-700">API Token</h3>
                                 <div class="flex space-x-2">
                                     <button onclick="copyToken()" class="text-purple-600 hover:text-purple-800">
                                         Copy Token
-                                    </button>
-                                    <button onclick="generateNewToken()" class="text-purple-600 hover:text-purple-800">
-                                        Generate New Token
                                     </button>
                                 </div>
                             </div>
@@ -103,26 +100,11 @@ if (!isset($_SESSION['user'])) {
                             </div>
                         </div>
                     </div>
-                    
-                    <div class="mb-6">
-                        <h2 class="text-xl font-semibold mb-4">Premium Features Section</h2>
-                        <div class="bg-purple-50 p-6 rounded-lg">
-                            <h2 class="text-xl font-bold mb-2">Get Plus for $10/mo</h2>
-                            <p class="text-purple-800 mb-4">
-                                With Plus, company and contact details of websites you visit are shown here.
-                            </p>
-                            <a href="#" class="inline-flex items-center text-purple-600 font-semibold hover:text-purple-800">
-                                Sign up 
-                                <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                </svg>
-                            </a>
-                        </div>
-                    </div>
                 </div>
             </div>
         <?php endif; ?>
     </div>
+
     <script>
         function copyToken() {
             const tokenInput = document.getElementById('apiToken');
@@ -131,36 +113,10 @@ if (!isset($_SESSION['user'])) {
             tokenInput.select();
             document.execCommand('copy');
             
-            // Show success message
             messageDiv.classList.remove('hidden');
             setTimeout(() => {
                 messageDiv.classList.add('hidden');
             }, 2000);
-        }
-
-        function generateNewToken() {
-            fetch('generate_token.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    document.getElementById('apiToken').value = data.token;
-                    alert('New token generated successfully!');
-                } else {
-                    alert('Error: ' + (data.message || 'Failed to generate token'));
-                }
-            })
-            .catch(error => {
-                alert('Error generating token. Please try again.');
-            });
-        }
-    </script>
-</body>
-</html>
         }
     </script>
 </body>

@@ -78,6 +78,12 @@ $plan = $_GET['plan'] ?? 'free';
                     </div>
                     <?php endif; ?>
 
+                    <?php if (isset($_GET['success'])): ?>
+                    <div class="alert alert-success" role="alert">
+                        <?php echo htmlspecialchars($_GET['message']); ?>
+                    </div>
+                    <?php endif; ?>
+
                     <form action="register.php" method="post">
                         <input type="hidden" name="plan" value="<?php echo htmlspecialchars($plan); ?>">
                         

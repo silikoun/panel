@@ -50,80 +50,106 @@ try {
             'apikey' => $_ENV['SUPABASE_KEY'],
             'Content-Type' => 'application/json'
         ],
-        'verify' => __DIR__ . '/certs/cacert.pem'
+        'verify' => false
     ]);
 
-    // First, sign up the user
+    // Generate API token
+    function generateApiToken($length = 32) {
+        return bin2hex(random_bytes($length));
+    }
+    
+    $apiToken = generateApiToken();
+    
+    // Set the site URL and redirect URL
+    $siteUrl = 'http://localhost:5656';
+    $redirectTo = $siteUrl . '/verify.php';
+
+    // Sign up the user with the API token included in metadata
     $signupResponse = $client->post('/auth/v1/signup', [
         'json' => [
             'email' => $email,
-            'password' => $password
+            'password' => $password,
+            'data' => [
+                'plan' => $plan,
+                'api_token' => $apiToken
+            ],
+            'options' => [
+                'data' => [
+                    'plan' => $plan,
+                    'api_token' => $apiToken
+                ],
+                'emailRedirectTo' => $redirectTo
+            ]
         ]
     ]);
 
     $statusCode = $signupResponse->getStatusCode();
-    $body = $signupResponse->getBody()->getContents();
+    $responseBody = json_decode($signupResponse->getBody()->getContents(), true);
     
     error_log("Signup response - Status: " . $statusCode);
-    error_log("Response body: " . $body);
+    error_log("Response body: " . json_encode($responseBody));
 
-    if ($statusCode === 200) {
-        // Now sign in to get the session
-        $loginResponse = $client->post('/auth/v1/token?grant_type=password', [
-            'json' => [
+    if ($statusCode === 200 && isset($responseBody['id'])) {
+        try {
+            // Store token in local file as backup
+            $tokenData = [
+                'user_id' => $responseBody['id'],
                 'email' => $email,
-                'password' => $password
-            ]
-        ]);
-
-        $loginBody = $loginResponse->getBody()->getContents();
-        $loginData = json_decode($loginBody, true);
-
-        if (isset($loginData['access_token'])) {
-            error_log("Registration and login successful");
-            // Store user data in session
-            session_start();
-            $_SESSION['user'] = $loginData;
+                'api_token' => $apiToken,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
             
-            // Update user metadata with plan
-            $client->post('/auth/v1/user', [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $loginData['access_token']
-                ],
-                'json' => [
-                    'data' => [
-                        'plan' => $plan
-                    ]
-                ]
-            ]);
+            $tokensFile = __DIR__ . '/tokens.json';
+            $existingTokens = [];
             
-            // Redirect to dashboard
-            header('Location: index.php');
+            if (file_exists($tokensFile)) {
+                $existingTokens = json_decode(file_get_contents($tokensFile), true) ?? [];
+            }
+            
+            // Check if user already has a token
+            $existingTokens = array_filter($existingTokens, function($item) use ($email) {
+                return $item['email'] !== $email;
+            });
+            
+            $existingTokens[] = $tokenData;
+            file_put_contents($tokensFile, json_encode($existingTokens, JSON_PRETTY_PRINT));
+            
+            error_log("Token stored in local file");
+            
+            // Show success message and ask user to verify email
+            header('Location: signup.php?success=1&message=' . urlencode('Registration successful! Please check your email to verify your account.'));
+            exit;
+        } catch (Exception $e) {
+            error_log("Failed to store token locally: " . $e->getMessage());
+            // Continue with registration even if token storage fails
+            header('Location: signup.php?success=1&message=' . urlencode('Registration successful! Please check your email to verify your account.'));
             exit;
         }
     }
     
-    $data = json_decode($body, true);
-    $error = $data['error_description'] ?? $data['msg'] ?? 'Registration failed';
-    error_log("Registration failed with error: " . $error);
-    header('Location: signup.php?error=1&message=' . urlencode($error));
+    error_log("Registration failed with status code: " . $statusCode);
+    header('Location: signup.php?error=1&message=' . urlencode('Registration failed. Please try again.'));
     exit;
 
 } catch (RequestException $e) {
-    error_log("Registration request error: " . $e->getMessage());
+    error_log("Registration error: " . $e->getMessage());
     if ($e->hasResponse()) {
-        $response = $e->getResponse();
-        $errorBody = $response->getBody()->getContents();
-        error_log("Error response body: " . $errorBody);
-        $data = json_decode($errorBody, true);
-        $error = $data['error_description'] ?? $data['msg'] ?? 'Registration failed';
+        $errorBody = json_decode($e->getResponse()->getBody(), true);
+        error_log("Error response: " . print_r($errorBody, true));
+        
+        // Check for specific error messages
+        $errorMessage = $errorBody['msg'] ?? $errorBody['error']['message'] ?? 'Registration failed';
+        if (stripos($errorMessage, 'already registered') !== false) {
+            $errorMessage = 'This email is already registered';
+        }
+        
+        header('Location: signup.php?error=1&message=' . urlencode($errorMessage));
     } else {
-        $error = 'Connection error';
+        header('Location: signup.php?error=1&message=' . urlencode('Connection error. Please try again.'));
     }
-    header('Location: signup.php?error=1&message=' . urlencode($error));
     exit;
 } catch (Exception $e) {
-    error_log("General registration error: " . $e->getMessage());
-    header('Location: signup.php?error=1&message=' . urlencode('System error'));
+    error_log("General error: " . $e->getMessage());
+    header('Location: signup.php?error=1&message=' . urlencode('System error. Please try again.'));
     exit;
 }
