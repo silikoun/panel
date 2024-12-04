@@ -17,6 +17,10 @@ use GuzzleHttp\Exception\RequestException;
 $_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL') ?: '';
 $_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY') ?: '';
 
+// Log environment variables for debugging
+error_log("SUPABASE_URL: " . $_ENV['SUPABASE_URL']);
+error_log("SUPABASE_KEY length: " . strlen($_ENV['SUPABASE_KEY']));
+
 // Only try to load .env if it exists
 if (file_exists(__DIR__ . '/.env')) {
     $dotenv = Dotenv::createImmutable(__DIR__);
@@ -39,10 +43,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
 
+    // Validate environment variables
+    if (empty($_ENV['SUPABASE_URL']) || empty($_ENV['SUPABASE_KEY'])) {
+        error_log("Missing required environment variables");
+        ob_end_clean();
+        header('Location: login.php?error=1&message=' . urlencode('System configuration error'));
+        exit;
+    }
+
     try {
         $client = new Client();
         
-        $response = $client->post('https://kgqwiwjayaydewyuygxt.supabase.co/auth/v1/token?grant_type=password', [
+        $response = $client->post($_ENV['SUPABASE_URL'] . '/auth/v1/token?grant_type=password', [
             'headers' => [
                 'apikey' => $_ENV['SUPABASE_KEY'],
                 'Content-Type' => 'application/json'
