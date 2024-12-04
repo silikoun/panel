@@ -161,3 +161,7 @@ if (!isset($_SESSION['user'])) {
     </script>
 </body>
 </html>
+        }
+    </script>
+</body>
+</html>

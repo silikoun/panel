@@ -16,23 +16,10 @@ use GuzzleHttp\Exception\RequestException;
 $dotenv = Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
-try {
-    $client = new Client([
-        'base_uri' => $_ENV['SUPABASE_URL'],
-        'headers' => [
-            'apikey' => $_ENV['SUPABASE_KEY'],
-            'Content-Type' => 'application/json'
-        ],
-        'verify' => __DIR__ . '/certs/cacert.pem'
-    ]);
-} catch (Exception $e) {
-    error_log('Client initialization error: ' . $e->getMessage());
-    die('Initialization error: ' . $e->getMessage());
-}
-
 if (isset($_POST['action']) && $_POST['action'] === 'logout') {
-    unset($_SESSION['user']);
-    header('Location: index.php');
+    session_destroy();
+    ob_end_clean();
+    header('Location: login.php');
     exit;
 }
 
@@ -41,47 +28,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
 
     try {
-        $response = $client->post('/auth/v1/token?grant_type=password', [
+        $client = new Client();
+        
+        $response = $client->post('https://kgqwiwjayaydewyuygxt.supabase.co/auth/v1/token?grant_type=password', [
             'headers' => [
-                'Authorization' => 'Bearer ' . $_ENV['SUPABASE_KEY']
+                'apikey' => $_ENV['SUPABASE_KEY'],
+                'Content-Type' => 'application/json'
             ],
             'json' => [
                 'email' => $email,
-                'password' => $password
-            ]
+                'password' => $password,
+                'grant_type' => 'password'
+            ],
+            'verify' => false
         ]);
 
-        $statusCode = $response->getStatusCode();
-        $body = $response->getBody()->getContents();
-        $data = json_decode($body, true);
+        $data = json_decode($response->getBody(), true);
+        error_log("Auth Response: " . print_r($data, true));
 
-        error_log("Auth Response - Status: $statusCode, Body: $body");
-
-        if ($statusCode === 200 && isset($data['access_token'])) {
+        if (isset($data['access_token'])) {
             $_SESSION['user'] = $data;
+            $_SESSION['user_email'] = $email;
+            ob_end_clean();
             header('Location: index.php');
             exit;
         } else {
-            $errorMessage = $data['error_description'] ?? $data['msg'] ?? 'Authentication failed';
-            header('Location: index.php?error=1&message=' . urlencode($errorMessage));
+            error_log("Auth failed: " . print_r($data, true));
+            ob_end_clean();
+            header('Location: login.php?error=1&message=' . urlencode('Invalid credentials'));
             exit;
         }
     } catch (RequestException $e) {
         error_log("Auth Error: " . $e->getMessage());
         if ($e->hasResponse()) {
-            $response = $e->getResponse();
-            $errorBody = $response->getBody()->getContents();
-            error_log("Error Response: " . $errorBody);
+            $errorBody = json_decode($e->getResponse()->getBody(), true);
+            error_log("Error Response: " . print_r($errorBody, true));
         }
-        header('Location: index.php?error=1&message=' . urlencode('Connection error'));
+        ob_end_clean();
+        header('Location: login.php?error=1&message=' . urlencode('Authentication failed'));
         exit;
     } catch (Exception $e) {
         error_log("General Error: " . $e->getMessage());
-        header('Location: index.php?error=1&message=' . urlencode('System error'));
+        ob_end_clean();
+        header('Location: login.php?error=1&message=' . urlencode('System error'));
         exit;
     }
+} else {
+    ob_end_clean();
+    header('Location: login.php');
+    exit;
 }
-
-ob_end_clean();
-header('Location: index.php');
-exit;
