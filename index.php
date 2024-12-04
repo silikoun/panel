@@ -59,8 +59,12 @@ if (!empty($missingVars)) {
     $error = 'Missing environment variables: ' . implode(', ', $missingVars);
 } else {
     try {
+        // Remove trailing slash from URL if present
+        $baseUrl = rtrim($_ENV['SUPABASE_URL'], '/');
+        error_log("Using Supabase URL: " . $baseUrl);
+        
         $client = new Client([
-            'base_uri' => $_ENV['SUPABASE_URL'],
+            'base_uri' => $baseUrl,
             'headers' => [
                 'apikey' => $_ENV['SUPABASE_KEY'],
                 'Content-Type' => 'application/json'

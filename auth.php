@@ -78,7 +78,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $client = new Client();
         
-        $response = $client->post($_ENV['SUPABASE_URL'] . '/auth/v1/token?grant_type=password', [
+        // Remove trailing slash from URL if present
+        $baseUrl = rtrim($_ENV['SUPABASE_URL'], '/');
+        error_log("Making request to: " . $baseUrl . '/auth/v1/token?grant_type=password');
+        
+        $response = $client->post($baseUrl . '/auth/v1/token?grant_type=password', [
             'headers' => [
                 'apikey' => $_ENV['SUPABASE_KEY'],
                 'Content-Type' => 'application/json'
