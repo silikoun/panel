@@ -13,8 +13,20 @@ use Dotenv\Dotenv;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+// Initialize environment variables with defaults
+$_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL') ?: '';
+$_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY') ?: '';
+
+// Only try to load .env if it exists
+if (file_exists(__DIR__ . '/.env')) {
+    $dotenv = Dotenv::createImmutable(__DIR__);
+    try {
+        $dotenv->load();
+    } catch (Exception $e) {
+        // Log error but don't crash
+        error_log('Error loading .env file: ' . $e->getMessage());
+    }
+}
 
 if (isset($_POST['action']) && $_POST['action'] === 'logout') {
     session_destroy();
