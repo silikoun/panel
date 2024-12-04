@@ -1,4 +1,4 @@
-FROM php:8.1-fpm
+FROM php:8.1-cli
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -8,8 +8,7 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     libxml2-dev \
     zip \
-    unzip \
-    nginx
+    unzip
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -23,7 +22,7 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy composer files first to leverage Docker cache
+# Copy composer files
 COPY composer.json composer.lock ./
 
 # Install dependencies
@@ -41,18 +40,12 @@ RUN mkdir -p storage/logs storage/cache \
 # Generate optimized autoload files
 RUN composer dump-autoload --optimize
 
-# Configure Nginx
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-RUN rm /etc/nginx/sites-enabled/default 2>/dev/null || true
-
 # Create start script
 COPY docker/start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 
-# Set environment variables
-ENV PORT=80
-ENV PHP_FPM_USER=www-data
-ENV PHP_FPM_GROUP=www-data
+# Expose port
+ENV PORT=8080
 
 # Start script as entrypoint
 ENTRYPOINT ["/usr/local/bin/start.sh"]
