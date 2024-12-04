@@ -3,41 +3,52 @@ ini_set('memory_limit', '1G');
 require 'vendor/autoload.php';
 session_start();
 
-use Dotenv\Dotenv;
 use GuzzleHttp\Client;
 
-// Try to load .env file if it exists, otherwise use environment variables
-if (file_exists(__DIR__ . '/.env')) {
-    $dotenv = Dotenv::createImmutable(__DIR__);
-    $dotenv->load();
-}
+// Initialize environment variables with defaults
+$_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL') ?: '';
+$_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY') ?: '';
 
-// Set environment variables if not already set
-if (!isset($_ENV['SUPABASE_URL'])) {
-    $_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL');
-}
-if (!isset($_ENV['SUPABASE_KEY'])) {
-    $_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY');
+// Log environment variables for debugging
+error_log("SUPABASE_URL: " . $_ENV['SUPABASE_URL']);
+error_log("SUPABASE_KEY length: " . strlen($_ENV['SUPABASE_KEY']));
+
+// Only try to load .env if it exists
+if (file_exists(__DIR__ . '/.env')) {
+    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+    try {
+        $dotenv->load();
+    } catch (Exception $e) {
+        // Log error but don't crash
+        error_log('Error loading .env file: ' . $e->getMessage());
+    }
 }
 
 $isAuthenticated = isset($_SESSION['user']);
 $error = null;
 
-try {
-    $client = new Client([
-        'base_uri' => $_ENV['SUPABASE_URL'],
-        'headers' => [
-            'apikey' => $_ENV['SUPABASE_KEY'],
-            'Content-Type' => 'application/json'
-        ],
-        'verify' => false,
-        'http_errors' => false
-    ]);
-    $isInitialized = true;
-} catch (Exception $e) {
+// Validate environment variables
+if (empty($_ENV['SUPABASE_URL']) || empty($_ENV['SUPABASE_KEY'])) {
+    error_log("Missing required environment variables");
     $isInitialized = false;
-    error_log('Client initialization error: ' . $e->getMessage());
-    $error = $e->getMessage();
+    $error = 'System configuration error: Missing required environment variables';
+} else {
+    try {
+        $client = new Client([
+            'base_uri' => $_ENV['SUPABASE_URL'],
+            'headers' => [
+                'apikey' => $_ENV['SUPABASE_KEY'],
+                'Content-Type' => 'application/json'
+            ],
+            'verify' => false,
+            'http_errors' => false
+        ]);
+        $isInitialized = true;
+    } catch (Exception $e) {
+        $isInitialized = false;
+        error_log('Client initialization error: ' . $e->getMessage());
+        $error = $e->getMessage();
+    }
 }
 
 // If user is not logged in, redirect to landing page
