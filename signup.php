@@ -2,10 +2,20 @@
 require 'vendor/autoload.php';
 session_start();
 
-use Dotenv\Dotenv;
+// Initialize environment variables with defaults
+$_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL') ?: '';
+$_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY') ?: '';
 
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+// Only try to load .env if it exists
+if (file_exists(__DIR__ . '/.env')) {
+    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+    try {
+        $dotenv->load();
+    } catch (Exception $e) {
+        // Log error but don't crash
+        error_log('Error loading .env file: ' . $e->getMessage());
+    }
+}
 
 $error = $_GET['error'] ?? '';
 $message = $_GET['message'] ?? '';

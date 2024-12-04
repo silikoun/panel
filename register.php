@@ -5,8 +5,20 @@ use Dotenv\Dotenv;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+// Initialize environment variables with defaults
+$_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL') ?: '';
+$_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY') ?: '';
+
+// Only try to load .env if it exists
+if (file_exists(__DIR__ . '/.env')) {
+    $dotenv = Dotenv::createImmutable(__DIR__);
+    try {
+        $dotenv->load();
+    } catch (Exception $e) {
+        // Log error but don't crash
+        error_log('Error loading .env file: ' . $e->getMessage());
+    }
+}
 
 error_log("Starting registration process");
 
@@ -61,7 +73,7 @@ try {
     $apiToken = generateApiToken();
     
     // Set the site URL and redirect URL
-    $siteUrl = 'http://localhost:5656';
+    $siteUrl = isset($_ENV['SITE_URL']) ? $_ENV['SITE_URL'] : 'https://' . $_SERVER['HTTP_HOST'];
     $redirectTo = $siteUrl . '/verify.php';
 
     // Sign up the user with the API token included in metadata
