@@ -44,11 +44,16 @@ RUN mkdir -p storage/logs storage/cache \
 RUN composer dump-autoload --optimize
 
 # Configure Apache
-RUN echo "ServerName localhost" >> /etc/apache2.conf \
-    && sed -i 's/\/var\/www\/html/\/var\/www\/html\/public/g' /etc/apache2/sites-available/000-default.conf
+COPY docker/000-default.conf /etc/apache2/sites-available/000-default.conf
+RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf \
+    && a2ensite 000-default.conf
 
 # Expose port (Railway will override this)
-EXPOSE 80
+EXPOSE ${PORT:-80}
 
-# Start Apache
-CMD ["apache2-foreground"]
+# Create start script
+COPY docker/start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
+
+# Start script as entrypoint
+ENTRYPOINT ["/usr/local/bin/start.sh"]
