@@ -26,107 +26,113 @@ $plan = $_GET['plan'] ?? 'free';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign Up - WooScraper</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body {
-            background: linear-gradient(135deg, #f8f5ff 0%, #f0e7ff 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-        }
-        .signup-container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            padding: 2rem;
-            max-width: 450px;
-            width: 100%;
-        }
-        .signup-btn {
-            background: #7c3aed;
-            border: none;
-            padding: 12px;
-            width: 100%;
-        }
-        .signup-btn:hover {
-            background: #6d28d9;
-        }
-        .form-control:focus {
-            border-color: #7c3aed;
-            box-shadow: 0 0 0 0.2rem rgba(124, 58, 237, 0.25);
-        }
-        .plan-badge {
-            background: #f8f5ff;
-            color: #7c3aed;
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            margin-bottom: 1rem;
-        }
-        .error-message {
-            color: #dc3545;
-            margin-bottom: 1rem;
-        }
-    </style>
+    <title>Sign Up - WooCommerce Scraper</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
-<body>
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-12">
-                <div class="signup-container mx-auto">
-                    <h1 class="h3 mb-4 text-center">Create your account</h1>
-                    
-                    <?php if ($plan === 'plus'): ?>
-                    <div class="plan-badge text-center mb-4">
-                        Plus Plan - $10/month
+<body class="bg-gray-50 min-h-screen flex flex-col">
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <a href="index.php" class="text-xl font-bold text-gray-800 hover:text-indigo-600">WooScraper</a>
                     </div>
-                    <?php endif; ?>
-
-                    <?php if ($error): ?>
-                    <div class="alert alert-danger" role="alert">
-                        <?php echo htmlspecialchars($message); ?>
-                    </div>
-                    <?php endif; ?>
-
-                    <?php if (isset($_GET['success'])): ?>
-                    <div class="alert alert-success" role="alert">
-                        <?php echo htmlspecialchars($_GET['message']); ?>
-                    </div>
-                    <?php endif; ?>
-
-                    <form action="register.php" method="post">
-                        <input type="hidden" name="plan" value="<?php echo htmlspecialchars($plan); ?>">
-                        
-                        <div class="mb-3">
-                            <label for="email" class="form-label">Email address</label>
-                            <input type="email" class="form-control" id="email" name="email" required>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="password" class="form-label">Password</label>
-                            <input type="password" class="form-control" id="password" name="password" 
-                                   required minlength="8">
-                            <div class="form-text">Must be at least 8 characters long</div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="confirm_password" class="form-label">Confirm Password</label>
-                            <input type="password" class="form-control" id="confirm_password" 
-                                   name="confirm_password" required minlength="8">
-                        </div>
-
-                        <button type="submit" class="btn signup-btn text-white mb-3">Create Account</button>
-
-                        <div class="text-center">
-                            <p class="mb-0">Already have an account? <a href="login.php" class="text-decoration-none">Log in</a></p>
-                        </div>
-                    </form>
+                </div>
+                <div class="flex items-center">
+                    <a href="login.php" class="text-gray-600 hover:text-indigo-600">
+                        Already have an account?
+                    </a>
                 </div>
             </div>
         </div>
+    </nav>
+
+    <div class="flex-grow flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow-lg">
+            <div>
+                <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                    Create your account
+                </h2>
+                <?php if ($plan === 'premium'): ?>
+                <div class="mt-4 inline-flex items-center justify-center w-full">
+                    <span class="px-4 py-2 rounded-full text-indigo-600 bg-indigo-100 text-sm font-semibold">
+                        Premium Plan - $39.99/month
+                    </span>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php if ($error): ?>
+            <div class="rounded-md bg-red-50 p-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-red-800"><?php echo htmlspecialchars($message); ?></h3>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if (isset($_GET['success'])): ?>
+            <div class="rounded-md bg-green-50 p-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm font-medium text-green-800"><?php echo htmlspecialchars($_GET['message']); ?></p>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <form class="mt-8 space-y-6" action="register.php" method="post">
+                <input type="hidden" name="plan" value="<?php echo htmlspecialchars($plan); ?>">
+                <div class="rounded-md shadow-sm -space-y-px">
+                    <div>
+                        <label for="email" class="sr-only">Email address</label>
+                        <input id="email" name="email" type="email" required 
+                               class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" 
+                               placeholder="Email address">
+                    </div>
+                    <div>
+                        <label for="password" class="sr-only">Password</label>
+                        <input id="password" name="password" type="password" required minlength="8"
+                               class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" 
+                               placeholder="Password">
+                    </div>
+                    <div>
+                        <label for="confirm_password" class="sr-only">Confirm Password</label>
+                        <input id="confirm_password" name="confirm_password" type="password" required minlength="8"
+                               class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" 
+                               placeholder="Confirm password">
+                    </div>
+                </div>
+
+                <div>
+                    <button type="submit" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Create Account
+                    </button>
+                </div>
+
+                <div class="text-sm text-center">
+                    <p class="text-gray-600">
+                        Already have an account? 
+                        <a href="login.php" class="font-medium text-indigo-600 hover:text-indigo-500">
+                            Sign in
+                        </a>
+                    </p>
+                </div>
+            </form>
+        </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.getElementById('password').addEventListener('input', validatePassword);
         document.getElementById('confirm_password').addEventListener('input', validatePassword);

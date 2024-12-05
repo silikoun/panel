@@ -1,48 +1,61 @@
 <?php
+// Prevent any output before headers
+ob_start();
+
 require 'vendor/autoload.php';
 
 use Dotenv\Dotenv;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 
-// Initialize environment variables with defaults
-$_ENV['SUPABASE_URL'] = getenv('SUPABASE_URL') ?: '';
-$_ENV['SUPABASE_KEY'] = getenv('SUPABASE_KEY') ?: '';
+// Enable error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // Disable display errors
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/error.log');
 
-// Only try to load .env if it exists
+error_log("Starting registration process - " . date('Y-m-d H:i:s'));
+
+// Load environment variables
 if (file_exists(__DIR__ . '/.env')) {
     $dotenv = Dotenv::createImmutable(__DIR__);
     try {
         $dotenv->load();
+        error_log("Loaded environment variables from .env file");
     } catch (Exception $e) {
-        // Log error but don't crash
         error_log('Error loading .env file: ' . $e->getMessage());
     }
 }
 
-error_log("Starting registration process");
+// Explicitly set Supabase credentials
+$_ENV['SUPABASE_URL'] = 'https://kgqwiwjayaydewyuygxt.supabase.co';
+$_ENV['SUPABASE_KEY'] = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtncXdpd2pheWF5ZGV3eXV5Z3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyNDI0MTYsImV4cCI6MjA0ODgxODQxNn0._ZUb83R2usvsrSgslrV6Fk4TX1Re3d1clNuU2LPyTtI';
+
+error_log("Using Supabase URL: " . $_ENV['SUPABASE_URL']);
+error_log("Supabase key length: " . strlen($_ENV['SUPABASE_KEY']));
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: signup.php');
     exit;
 }
 
-$email = $_POST['email'] ?? '';
-$password = $_POST['password'] ?? '';
-$confirm_password = $_POST['confirm_password'] ?? '';
-$plan = $_POST['plan'] ?? 'free';
+// Get POST data with proper validation
+$email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
+$password = filter_input(INPUT_POST, 'password', FILTER_UNSAFE_RAW);
+$confirm_password = filter_input(INPUT_POST, 'confirm_password', FILTER_UNSAFE_RAW);
+$plan = filter_input(INPUT_POST, 'plan', FILTER_UNSAFE_RAW) ?? 'free';
 
-error_log("Registration attempt - Email: " . $email . ", Plan: " . $plan);
+error_log("Registration attempt - Email: " . ($email ?? 'not set') . ", Plan: " . $plan);
 
 // Validate inputs
-if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    error_log("Invalid email format: " . $email);
+if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    error_log("Invalid email format: " . ($email ?? 'not set'));
     header('Location: signup.php?error=1&message=' . urlencode('Invalid email address'));
     exit;
 }
 
-if (strlen($password) < 8) {
-    error_log("Password too short");
+if (!$password || strlen($password) < 8) {
+    error_log("Password too short or not set");
     header('Location: signup.php?error=1&message=' . urlencode('Password must be at least 8 characters long'));
     exit;
 }
@@ -56,14 +69,26 @@ if ($password !== $confirm_password) {
 try {
     error_log("Initializing Supabase client");
     
-    $client = new Client([
+    // Test Supabase connection first
+    $testClient = new Client([
         'base_uri' => $_ENV['SUPABASE_URL'],
         'headers' => [
             'apikey' => $_ENV['SUPABASE_KEY'],
             'Content-Type' => 'application/json'
         ],
-        'verify' => false
+        'verify' => false,
+        'timeout' => 30,
+        'connect_timeout' => 30
     ]);
+
+    error_log("Testing Supabase connection...");
+    try {
+        $testResponse = $testClient->get('/rest/v1/');
+        error_log("Supabase connection test successful");
+    } catch (Exception $e) {
+        error_log("Supabase connection test failed: " . $e->getMessage());
+        throw new Exception("Failed to connect to Supabase. Please check your credentials.");
+    }
 
     // Generate API token
     function generateApiToken($length = 32) {
@@ -71,28 +96,38 @@ try {
     }
     
     $apiToken = generateApiToken();
+    error_log("Generated API token");
     
     // Set the site URL and redirect URL
-    $siteUrl = isset($_ENV['SITE_URL']) ? $_ENV['SITE_URL'] : 'https://' . $_SERVER['HTTP_HOST'];
+    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+    $siteUrl = $protocol . '://' . $_SERVER['HTTP_HOST'];
     $redirectTo = $siteUrl . '/verify.php';
+    
+    error_log("Site URL: " . $siteUrl);
+    error_log("Redirect URL: " . $redirectTo);
 
-    // Sign up the user with the API token included in metadata
-    $signupResponse = $client->post('/auth/v1/signup', [
-        'json' => [
-            'email' => $email,
-            'password' => $password,
+    // Prepare signup data
+    $signupData = [
+        'email' => $email,
+        'password' => $password,
+        'data' => [
+            'plan' => $plan,
+            'api_token' => $apiToken
+        ],
+        'options' => [
             'data' => [
                 'plan' => $plan,
                 'api_token' => $apiToken
             ],
-            'options' => [
-                'data' => [
-                    'plan' => $plan,
-                    'api_token' => $apiToken
-                ],
-                'emailRedirectTo' => $redirectTo
-            ]
+            'emailRedirectTo' => $redirectTo
         ]
+    ];
+
+    error_log("Sending signup request with data: " . json_encode($signupData));
+
+    // Sign up the user
+    $signupResponse = $testClient->post('/auth/v1/signup', [
+        'json' => $signupData
     ]);
 
     $statusCode = $signupResponse->getStatusCode();
@@ -128,28 +163,24 @@ try {
             
             error_log("Token stored in local file");
             
-            // Show success message and ask user to verify email
             header('Location: signup.php?success=1&message=' . urlencode('Registration successful! Please check your email to verify your account.'));
             exit;
         } catch (Exception $e) {
             error_log("Failed to store token locally: " . $e->getMessage());
-            // Continue with registration even if token storage fails
             header('Location: signup.php?success=1&message=' . urlencode('Registration successful! Please check your email to verify your account.'));
             exit;
         }
     }
     
     error_log("Registration failed with status code: " . $statusCode);
-    header('Location: signup.php?error=1&message=' . urlencode('Registration failed. Please try again.'));
-    exit;
+    throw new Exception("Registration failed with status code: " . $statusCode);
 
 } catch (RequestException $e) {
-    error_log("Registration error: " . $e->getMessage());
+    error_log("Registration error (RequestException): " . $e->getMessage());
     if ($e->hasResponse()) {
         $errorBody = json_decode($e->getResponse()->getBody(), true);
         error_log("Error response: " . print_r($errorBody, true));
         
-        // Check for specific error messages
         $errorMessage = $errorBody['msg'] ?? $errorBody['error']['message'] ?? 'Registration failed';
         if (stripos($errorMessage, 'already registered') !== false) {
             $errorMessage = 'This email is already registered';
@@ -162,6 +193,9 @@ try {
     exit;
 } catch (Exception $e) {
     error_log("General error: " . $e->getMessage());
-    header('Location: signup.php?error=1&message=' . urlencode('System error. Please try again.'));
+    header('Location: signup.php?error=1&message=' . urlencode($e->getMessage()));
     exit;
 }
+
+// Ensure all output is sent and clean the buffer
+ob_end_flush();
