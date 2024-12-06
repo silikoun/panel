@@ -398,6 +398,10 @@ try {
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <a href="#" class="text-indigo-600 hover:text-indigo-900" 
+                                       onclick="viewUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
+                                        View
+                                    </a>
+                                    <a href="#" class="text-indigo-600 hover:text-indigo-900" 
                                        onclick="editUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
                                         Edit
                                     </a>
@@ -410,30 +414,245 @@ try {
         </div>
     </div>
 
+    <!-- View User Modal -->
+    <div id="viewUserModal" class="fixed z-10 inset-0 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                                User Details
+                            </h3>
+                            <div class="mt-4">
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium text-gray-700">Email</label>
+                                    <p id="viewUserEmail" class="mt-1 p-2 w-full text-gray-900"></p>
+                                </div>
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium text-gray-700">Plan</label>
+                                    <p id="viewUserPlan" class="mt-1 p-2 w-full text-gray-900"></p>
+                                </div>
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium text-gray-700">Status</label>
+                                    <p id="viewUserStatus" class="mt-1 p-2 w-full text-gray-900"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm" onclick="closeViewModal()">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="editUserModal" class="fixed z-10 inset-0 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                                Edit User
+                            </h3>
+                            <div class="mt-4">
+                                <form id="editUserForm">
+                                    <input type="hidden" id="editUserId" name="userId">
+                                    <div class="mb-4">
+                                        <label for="editUserEmail" class="block text-sm font-medium text-gray-700">Email</label>
+                                        <input type="email" name="email" id="editUserEmail" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                    </div>
+                                    <div class="mb-4">
+                                        <label for="editUserPlan" class="block text-sm font-medium text-gray-700">Plan</label>
+                                        <select name="plan" id="editUserPlan" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                            <option value="free">Free</option>
+                                            <option value="pro">Pro</option>
+                                            <option value="enterprise">Enterprise</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-4">
+                                        <label for="editUserStatus" class="block text-sm font-medium text-gray-700">Status</label>
+                                        <select name="status" id="editUserStatus" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                            <option value="ACTIVE">Active</option>
+                                            <option value="BANNED">Banned</option>
+                                            <option value="PENDING">Pending</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-4">
+                                        <label for="editUserPassword" class="block text-sm font-medium text-gray-700">New Password (leave empty to keep current)</label>
+                                        <input type="password" name="password" id="editUserPassword" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm" onclick="deleteUser()">
+                        Delete User
+                    </button>
+                    <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="saveUserChanges()">
+                        Save Changes
+                    </button>
+                    <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeEditModal()">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        async function editUser(userId) {
-            // Implement edit functionality
-            console.log('Edit user:', userId);
+        function showViewModal() {
+            document.getElementById('viewUserModal').classList.remove('hidden');
         }
 
-        async function deleteUser(userId) {
-            if (confirm('Are you sure you want to delete this user?')) {
-                try {
-                    const response = await fetch('/api/users/' + userId, {
-                        method: 'DELETE',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    if (response.ok) {
-                        location.reload();
-                    } else {
-                        alert('Error deleting user');
+        function closeViewModal() {
+            document.getElementById('viewUserModal').classList.add('hidden');
+        }
+
+        async function viewUser(userId) {
+            try {
+                // Get user data
+                const response = await fetch(`update_user.php?action=get&userId=${userId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
                     }
-                } catch (error) {
-                    console.error('Error:', error);
-                    alert('Error deleting user');
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch user data');
                 }
+
+                const userData = await response.json();
+                
+                // Populate modal with user data
+                document.getElementById('viewUserEmail').textContent = userData.email;
+                document.getElementById('viewUserPlan').textContent = userData.user_metadata?.plan || 'free';
+                document.getElementById('viewUserStatus').textContent = userData.status;
+
+                // Show modal
+                showViewModal();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error loading user data');
+            }
+        }
+
+        function showEditModal() {
+            document.getElementById('editUserModal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editUserModal').classList.add('hidden');
+        }
+
+        async function editUser(userId) {
+            try {
+                // Get user data
+                const response = await fetch(`update_user.php?action=get&userId=${userId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch user data');
+                }
+
+                const userData = await response.json();
+                
+                // Populate modal with user data
+                document.getElementById('editUserId').value = userId;
+                document.getElementById('editUserEmail').value = userData.email;
+                document.getElementById('editUserPlan').value = userData.user_metadata?.plan || 'free';
+                document.getElementById('editUserStatus').value = userData.status;
+                document.getElementById('editUserPassword').value = '';
+
+                // Show modal
+                showEditModal();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error loading user data');
+            }
+        }
+
+        async function saveUserChanges() {
+            const userId = document.getElementById('editUserId').value;
+            const email = document.getElementById('editUserEmail').value;
+            const plan = document.getElementById('editUserPlan').value;
+            const status = document.getElementById('editUserStatus').value;
+            const password = document.getElementById('editUserPassword').value;
+
+            try {
+                const response = await fetch('update_user.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'update',
+                        userId: userId,
+                        email: email,
+                        plan: plan,
+                        status: status,
+                        password: password || undefined
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update user');
+                }
+
+                // Close modal and reload page
+                closeEditModal();
+                location.reload();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error updating user');
+            }
+        }
+
+        async function deleteUser() {
+            const userId = document.getElementById('editUserId').value;
+            
+            if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('update_user.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'delete',
+                        userId: userId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to delete user');
+                }
+
+                // Close modal and reload page
+                closeEditModal();
+                location.reload();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error deleting user');
             }
         }
     </script>
