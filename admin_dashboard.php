@@ -49,13 +49,8 @@ try {
     
     error_log('Successfully loaded environment variables');
     
-    // Try to get environment variables directly from Apache/PHP-FPM environment
-    $supabaseUrl = apache_getenv('SUPABASE_URL') 
-        ?? $_SERVER['SUPABASE_URL'] 
-        ?? $_ENV['SUPABASE_URL'] 
-        ?? getenv('SUPABASE_URL') 
-        ?? null;
-        
+    // Try to get environment variables directly from environment
+    $supabaseUrl = getenv('SUPABASE_URL');
     if (!$supabaseUrl) {
         // Try reading from a temporary file if environment variables are not available
         $envFile = '/tmp/railway.conf';
@@ -71,12 +66,7 @@ try {
     
     error_log('Successfully loaded SUPABASE_URL: ' . $supabaseUrl);
     
-    $supabaseKey = apache_getenv('SUPABASE_SERVICE_ROLE_KEY')
-        ?? $_SERVER['SUPABASE_SERVICE_ROLE_KEY']
-        ?? $_ENV['SUPABASE_SERVICE_ROLE_KEY']
-        ?? getenv('SUPABASE_SERVICE_ROLE_KEY')
-        ?? null;
-        
+    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
     if (!$supabaseKey && file_exists($envFile)) {
         $envContents = parse_ini_file($envFile);
         $supabaseKey = $envContents['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
@@ -90,8 +80,6 @@ try {
 
     // Debug logging
     error_log('Environment variable sources:');
-    error_log('$_SERVER: ' . print_r($_SERVER['SUPABASE_URL'] ?? 'not set', true));
-    error_log('$_ENV: ' . print_r($_ENV['SUPABASE_URL'] ?? 'not set', true));
     error_log('getenv(): ' . print_r(getenv('SUPABASE_URL'), true));
     
     if (empty($supabaseUrl)) {
