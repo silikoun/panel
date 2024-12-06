@@ -1,25 +1,66 @@
 <?php
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
-header('Access-Control-Allow-Methods: POST');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+
+// Handle preflight requests
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
 
 require 'vendor/autoload.php';
+
+// Enable error logging
+error_reporting(E_ALL);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/error.log');
 
 use Dotenv\Dotenv;
 use GuzzleHttp\Client;
 
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+// Load environment variables
+if (file_exists(__DIR__ . '/.env')) {
+    try {
+        $dotenv = Dotenv::createImmutable(__DIR__);
+        $dotenv->load();
+        error_log("Environment variables loaded successfully");
+    } catch (Exception $e) {
+        error_log("Error loading .env file: " . $e->getMessage());
+    }
+}
 
-// Get the token from the request
-$data = json_decode(file_get_contents('php://input'), true);
+// Get and validate the request body
+$rawInput = file_get_contents('php://input');
+error_log("Received raw input: " . $rawInput);
+
+try {
+    $data = json_decode($rawInput, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        throw new Exception('Invalid JSON: ' . json_last_error_msg());
+    }
+} catch (Exception $e) {
+    error_log("JSON parsing error: " . $e->getMessage());
+    http_response_code(400);
+    echo json_encode([
+        'valid' => false,
+        'message' => 'Invalid request format'
+    ]);
+    exit;
+}
+
 $token = $data['token'] ?? '';
 
 if (empty($token)) {
+    error_log("No token provided in request");
+    http_response_code(400);
     echo json_encode(['valid' => false, 'message' => 'No token provided']);
     exit;
 }
+
+error_log("Processing token validation for token: " . substr($token, 0, 10) . "...");
 
 try {
     // Initialize Supabase client
@@ -37,17 +78,33 @@ try {
     $tokenValid = false;
     $message = 'Invalid token';
 
-    if (file_exists($tokensFile)) {
-        $tokens = json_decode(file_get_contents($tokensFile), true) ?? [];
-        foreach ($tokens as $tokenData) {
-            if ($tokenData['api_token'] === $token) {
-                $tokenValid = true;
-                $message = 'Token is valid';
-                break;
-            }
+    if (!file_exists($tokensFile)) {
+        error_log("tokens.json file not found");
+        throw new Exception('Token storage file not found');
+    }
+
+    $tokensContent = file_get_contents($tokensFile);
+    if ($tokensContent === false) {
+        error_log("Could not read tokens.json");
+        throw new Exception('Could not read token storage file');
+    }
+
+    $tokens = json_decode($tokensContent, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        error_log("Error parsing tokens.json: " . json_last_error_msg());
+        throw new Exception('Error parsing token storage file');
+    }
+
+    foreach ($tokens as $tokenData) {
+        if ($tokenData['api_token'] === $token) {
+            $tokenValid = true;
+            $message = 'Token is valid';
+            error_log("Token validated successfully");
+            break;
         }
     }
 
+    http_response_code($tokenValid ? 200 : 401);
     echo json_encode([
         'valid' => $tokenValid,
         'message' => $message
@@ -55,8 +112,9 @@ try {
 
 } catch (Exception $e) {
     error_log("Token validation error: " . $e->getMessage());
+    http_response_code(500);
     echo json_encode([
         'valid' => false,
-        'message' => 'Error validating token'
+        'message' => 'Error validating token: ' . $e->getMessage()
     ]);
 }
