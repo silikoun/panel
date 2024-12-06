@@ -39,8 +39,10 @@ error_log("Received raw input: " . $rawInput);
 try {
     $data = json_decode($rawInput, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
+        error_log("JSON decode error: " . json_last_error_msg() . " for input: " . $rawInput);
         throw new Exception('Invalid JSON: ' . json_last_error_msg());
     }
+    error_log("Decoded JSON data: " . json_encode($data));
 } catch (Exception $e) {
     error_log("JSON parsing error: " . $e->getMessage());
     http_response_code(400);
@@ -52,6 +54,7 @@ try {
 }
 
 $token = $data['token'] ?? '';
+error_log("Extracted token: " . $token);
 
 if (empty($token)) {
     error_log("No token provided in request");
@@ -60,7 +63,7 @@ if (empty($token)) {
     exit;
 }
 
-error_log("Processing token validation for token: " . substr($token, 0, 10) . "...");
+error_log("Processing token validation for token: " . $token);
 
 try {
     // Initialize Supabase client
@@ -79,29 +82,36 @@ try {
     $message = 'Invalid token';
 
     if (!file_exists($tokensFile)) {
-        error_log("tokens.json file not found");
+        error_log("tokens.json file not found at path: " . $tokensFile);
         throw new Exception('Token storage file not found');
     }
 
     $tokensContent = file_get_contents($tokensFile);
     if ($tokensContent === false) {
-        error_log("Could not read tokens.json");
+        error_log("Could not read tokens.json at path: " . $tokensFile);
         throw new Exception('Could not read token storage file');
     }
+    error_log("Loaded tokens.json content: " . $tokensContent);
 
     $tokens = json_decode($tokensContent, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
-        error_log("Error parsing tokens.json: " . json_last_error_msg());
+        error_log("Error parsing tokens.json: " . json_last_error_msg() . " for content: " . $tokensContent);
         throw new Exception('Error parsing token storage file');
     }
+    error_log("Number of tokens in file: " . count($tokens));
 
     foreach ($tokens as $tokenData) {
+        error_log("Comparing token: " . $tokenData['api_token'] . " with provided token: " . $token);
         if ($tokenData['api_token'] === $token) {
             $tokenValid = true;
             $message = 'Token is valid';
-            error_log("Token validated successfully");
+            error_log("Token match found!");
             break;
         }
+    }
+
+    if (!$tokenValid) {
+        error_log("No matching token found in tokens.json");
     }
 
     http_response_code($tokenValid ? 200 : 401);
