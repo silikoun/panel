@@ -24,16 +24,33 @@ try {
         error_log('No .env file found, using system environment variables');
     }
     
+    // Debug: Print all available environment variables
+    error_log('Available $_SERVER variables: ' . print_r($_SERVER, true));
+    error_log('Available $_ENV variables: ' . print_r($_ENV, true));
+    error_log('Available getenv variables: ' . print_r(getenv(), true));
+    
     // Try multiple ways to get environment variables
     $supabaseUrl = $_SERVER['SUPABASE_URL'] 
         ?? $_ENV['SUPABASE_URL'] 
         ?? getenv('SUPABASE_URL') 
         ?? null;
+        
+    if (!$supabaseUrl) {
+        throw new Exception('SUPABASE_URL is not set in any environment variable location');
+    }
     
-    $supabaseKey = $_SERVER['SUPABASE_SERVICE_ROLE_KEY'] 
-        ?? $_ENV['SUPABASE_SERVICE_ROLE_KEY'] 
-        ?? getenv('SUPABASE_SERVICE_ROLE_KEY') 
+    error_log('Successfully loaded SUPABASE_URL: ' . $supabaseUrl);
+    
+    $supabaseKey = $_SERVER['SUPABASE_SERVICE_ROLE_KEY']
+        ?? $_ENV['SUPABASE_SERVICE_ROLE_KEY']
+        ?? getenv('SUPABASE_SERVICE_ROLE_KEY')
         ?? null;
+        
+    if (!$supabaseKey) {
+        throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in any environment variable location');
+    }
+    
+    error_log('Successfully loaded SUPABASE_SERVICE_ROLE_KEY (length: ' . strlen($supabaseKey) . ')');
 
     // Debug logging
     error_log('Environment variable sources:');
