@@ -30,18 +30,20 @@ try {
     
     // Debug: Print all available environment variables
     error_log('Available environment variables after loading:');
-    error_log('SUPABASE_URL: ' . getenv('SUPABASE_URL'));
-    error_log('SUPABASE_KEY length: ' . strlen(getenv('SUPABASE_KEY')));
-    error_log('SUPABASE_SERVICE_ROLE_KEY length: ' . strlen(getenv('SUPABASE_SERVICE_ROLE_KEY')));
+    error_log('SUPABASE_URL: ' . (getenv('SUPABASE_URL') ?: 'not set'));
+    error_log('SUPABASE_KEY length: ' . strlen(getenv('SUPABASE_KEY') ?: ''));
+    error_log('SUPABASE_SERVICE_ROLE_KEY length: ' . strlen(getenv('SUPABASE_SERVICE_ROLE_KEY') ?: ''));
     
-    // Get environment variables
+    // Get environment variables with detailed error messages
     $supabaseUrl = getenv('SUPABASE_URL');
     if (!$supabaseUrl) {
+        error_log('SUPABASE_URL is missing. Available environment variables: ' . print_r(getenv(), true));
         throw new Exception('SUPABASE_URL is not set in environment');
     }
     
     $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
     if (!$supabaseKey) {
+        error_log('SUPABASE_SERVICE_ROLE_KEY is missing. Available environment variables: ' . print_r(getenv(), true));
         throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in environment');
     }
     
