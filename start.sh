@@ -1,16 +1,15 @@
 #!/bin/bash
 
-# Create PHP configuration file
-echo "env[SUPABASE_URL] = ${SUPABASE_URL}
-env[SUPABASE_KEY] = ${SUPABASE_KEY}
-env[SUPABASE_SERVICE_ROLE_KEY] = ${SUPABASE_SERVICE_ROLE_KEY}
-env[SITE_URL] = ${SITE_URL}" > /tmp/railway.conf
+# Create environment file
+echo "<?php
+putenv('SUPABASE_URL=${SUPABASE_URL}');
+putenv('SUPABASE_KEY=${SUPABASE_KEY}');
+putenv('SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}');
+putenv('SITE_URL=${SITE_URL}');
+" > /var/www/html/env.php
 
-# Export variables to current shell
-export SUPABASE_URL
-export SUPABASE_KEY
-export SUPABASE_SERVICE_ROLE_KEY
-export SITE_URL
+# Make the environment file readable
+chmod 644 /var/www/html/env.php
 
 # Start PHP development server with custom configuration
-PHP_INI_SCAN_DIR=/tmp php -S 0.0.0.0:${PORT:-8080} -t /var/www/html
+php -c php.ini -S 0.0.0.0:${PORT:-8080} -t /var/www/html

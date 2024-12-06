@@ -15,19 +15,37 @@ ini_set('display_errors', 1);
 try {
     error_log('Current directory: ' . __DIR__);
     
+    // Try to load environment variables from env.php
+    if (file_exists(__DIR__ . '/env.php')) {
+        require_once __DIR__ . '/env.php';
+        error_log('Loaded environment from env.php');
+    }
+    
     // Try to load from .env file for local development
     if (file_exists(__DIR__ . '/.env')) {
         $dotenv = Dotenv::createImmutable(__DIR__);
         $dotenv->load();
         error_log('Loaded environment from .env file');
-    } else {
-        error_log('No .env file found, using system environment variables');
     }
     
     // Debug: Print all available environment variables
-    error_log('Available $_SERVER variables: ' . print_r($_SERVER, true));
-    error_log('Available $_ENV variables: ' . print_r($_ENV, true));
-    error_log('Available getenv variables: ' . print_r(getenv(), true));
+    error_log('Available environment variables after loading:');
+    error_log('SUPABASE_URL: ' . getenv('SUPABASE_URL'));
+    error_log('SUPABASE_KEY length: ' . strlen(getenv('SUPABASE_KEY')));
+    error_log('SUPABASE_SERVICE_ROLE_KEY length: ' . strlen(getenv('SUPABASE_SERVICE_ROLE_KEY')));
+    
+    // Get environment variables
+    $supabaseUrl = getenv('SUPABASE_URL');
+    if (!$supabaseUrl) {
+        throw new Exception('SUPABASE_URL is not set in environment');
+    }
+    
+    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
+    if (!$supabaseKey) {
+        throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in environment');
+    }
+    
+    error_log('Successfully loaded environment variables');
     
     // Try to get environment variables directly from Apache/PHP-FPM environment
     $supabaseUrl = apache_getenv('SUPABASE_URL') 
