@@ -13,17 +13,40 @@ ini_set('display_errors', 1);
 
 // Load environment configuration
 try {
+    error_log('Current directory: ' . __DIR__);
+    
+    // Try to load from .env file for local development
     if (file_exists(__DIR__ . '/.env')) {
         $dotenv = Dotenv::createImmutable(__DIR__);
         $dotenv->load();
+        error_log('Loaded environment from .env file');
+    } else {
+        error_log('No .env file found, using system environment variables');
     }
     
-    $supabaseUrl = getenv('SUPABASE_URL') ?: $_ENV['SUPABASE_URL'] ?? null;
-    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: $_ENV['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
-    
-    if (!$supabaseUrl || !$supabaseKey) {
-        throw new Exception('Missing required Supabase configuration');
+    // Check both getenv() and $_ENV
+    $supabaseUrl = getenv('SUPABASE_URL');
+    if (empty($supabaseUrl)) {
+        $supabaseUrl = $_ENV['SUPABASE_URL'] ?? null;
     }
+    error_log('SUPABASE_URL: ' . ($supabaseUrl ? 'found' : 'missing'));
+
+    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
+    if (empty($supabaseKey)) {
+        $supabaseKey = $_ENV['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
+    }
+    error_log('SUPABASE_SERVICE_ROLE_KEY: ' . ($supabaseKey ? 'found' : 'missing'));
+    
+    if (empty($supabaseUrl)) {
+        throw new Exception('SUPABASE_URL is not set');
+    }
+    if (empty($supabaseKey)) {
+        throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set');
+    }
+
+    error_log('Successfully loaded Supabase configuration');
+    error_log('Supabase URL: ' . $supabaseUrl);
+    error_log('Service Role Key length: ' . strlen($supabaseKey));
 } catch (Exception $e) {
     error_log('Error loading environment: ' . $e->getMessage());
     die('Error loading environment configuration: ' . $e->getMessage());
@@ -35,9 +58,6 @@ if (!isset($_SESSION['user']) || !isset($_SESSION['user']['is_admin']) || $_SESS
     header('Location: login.php');
     exit;
 }
-
-error_log("Supabase URL: " . $supabaseUrl);
-error_log("Using Service Role Key length: " . strlen($supabaseKey));
 
 // Initialize Supabase client
 try {
