@@ -48,46 +48,54 @@ class TokenManager {
     
     public function validateToken($token, $type = 'access') {
         try {
+            // Log validation attempt
+            error_log("Attempting to validate {$type} token");
+            
+            // Trim the token to handle whitespace issues
+            $token = trim($token);
+            
+            // Check if token is empty after trimming
+            if (empty($token)) {
+                throw new Exception('Empty token provided');
+            }
+
             // Check if token is revoked
+            $stmt = $this->db->prepare("SELECT * FROM revoked_tokens WHERE token_hash = ?");
             $tokenHash = hash('sha256', $token);
-            $stmt = $this->db->prepare("SELECT id FROM revoked_tokens WHERE token_hash = ?");
             $stmt->execute([$tokenHash]);
+            
             if ($stmt->fetch()) {
-                error_log('Token is revoked');
-                return false;
+                error_log("Token validation failed: Token is revoked");
+                throw new Exception('Token has been revoked');
             }
-            
-            // Special handling for non-JWT tokens
-            if (strlen($token) === 64 && ctype_xdigit($token)) {
-                error_log('Processing as non-JWT token');
-                // For demonstration, we'll create a simple decoded object
-                return (object)[
-                    'sub' => 1, // Default user ID
-                    'type' => $type,
-                    'iat' => time(),
-                    'exp' => time() + 3600
-                ];
-            }
-            
-            // Try JWT decode for standard tokens
+
+            // Decode and verify the token
             try {
-                error_log('Attempting JWT decode');
                 $decoded = JWT::decode($token, new Key($this->secretKey, $this->algorithm));
-                
-                // Verify token type
-                if (!isset($decoded->type) || $decoded->type !== $type) {
-                    error_log('Invalid token type');
-                    return false;
-                }
-                
-                return $decoded;
+            } catch (\Firebase\JWT\ExpiredException $e) {
+                error_log("Token validation failed: Token has expired");
+                throw new Exception('Token has expired');
+            } catch (\Firebase\JWT\SignatureInvalidException $e) {
+                error_log("Token validation failed: Invalid signature");
+                throw new Exception('Invalid token signature');
             } catch (Exception $e) {
-                error_log('JWT decode failed: ' . $e->getMessage());
-                return false;
+                error_log("Token validation failed: " . $e->getMessage());
+                throw new Exception('Invalid token format');
             }
+
+            // Verify token type
+            if (!isset($decoded->type) || $decoded->type !== $type) {
+                error_log("Token validation failed: Invalid token type");
+                throw new Exception('Invalid token type');
+            }
+
+            // Log successful validation
+            error_log("Token successfully validated for user ID: {$decoded->sub}");
+            
+            return $decoded;
         } catch (Exception $e) {
-            error_log('Token validation error: ' . $e->getMessage());
-            return false;
+            error_log("Token validation error: " . $e->getMessage());
+            throw $e;
         }
     }
     
@@ -114,20 +122,31 @@ class TokenManager {
         return $stmt->execute([$tokenHash, $reason]);
     }
     
-    public function checkRateLimit($ipAddress) {
-        // Check attempts in last minute
-        $stmt = $this->db->prepare("SELECT COUNT(*) as attempts FROM token_attempts WHERE ip_address = ? AND attempt_time > DATE_SUB(NOW(), INTERVAL 1 MINUTE)");
-        $stmt->execute([$ipAddress]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($result['attempts'] >= 5) {
-            return false;
+    public function checkRateLimit($ipAddress, $maxAttempts = 10, $timeWindow = 300) {
+        try {
+            // Clean up old attempts
+            $stmt = $this->db->prepare("DELETE FROM validation_attempts WHERE attempt_time < DATE_SUB(NOW(), INTERVAL ? SECOND)");
+            $stmt->execute([$timeWindow]);
+
+            // Count recent attempts
+            $stmt = $this->db->prepare("SELECT COUNT(*) as attempts FROM validation_attempts WHERE ip_address = ? AND attempt_time > DATE_SUB(NOW(), INTERVAL ? SECOND)");
+            $stmt->execute([$ipAddress, $timeWindow]);
+            $result = $stmt->fetch();
+
+            if ($result['attempts'] >= $maxAttempts) {
+                error_log("Rate limit exceeded for IP: {$ipAddress}");
+                return false;
+            }
+
+            // Record new attempt
+            $stmt = $this->db->prepare("INSERT INTO validation_attempts (ip_address) VALUES (?)");
+            $stmt->execute([$ipAddress]);
+
+            return true;
+        } catch (Exception $e) {
+            error_log("Rate limiting error: " . $e->getMessage());
+            // If there's an error checking rate limit, allow the request
+            return true;
         }
-        
-        // Log attempt
-        $stmt = $this->db->prepare("INSERT INTO token_attempts (ip_address) VALUES (?)");
-        $stmt->execute([$ipAddress]);
-        
-        return true;
     }
 }

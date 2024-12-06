@@ -1,140 +1,100 @@
 <?php
-ob_start();
-
-ini_set('memory_limit', '1G');
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-require 'vendor/autoload.php';
 session_start();
+require 'vendor/autoload.php';
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 
-// Load .env file first if it exists
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// Load environment variables
 if (file_exists(__DIR__ . '/.env')) {
     $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-    try {
-        $dotenv->load();
-        error_log("Loaded .env file");
-    } catch (Exception $e) {
-        error_log('Error loading .env file: ' . $e->getMessage());
-    }
+    $dotenv->load();
 }
 
-// Debug: Print all environment variables
-error_log("All environment variables:");
-error_log(print_r($_ENV, true));
-error_log("All getenv variables:");
-error_log(print_r(getenv(), true));
-error_log("All _SERVER variables:");
-error_log(print_r($_SERVER, true));
-
-// Set Supabase URL and Key
-$_ENV['SUPABASE_URL'] = 'https://kgqwiwjayaydewyuygxt.supabase.co';
-
-// Debug key access
-error_log("SUPABASE_KEY from _SERVER: " . ($_SERVER['SUPABASE_KEY'] ?? 'not set'));
-error_log("SUPABASE_KEY from getenv: " . (getenv('SUPABASE_KEY') ?: 'not set'));
-error_log("SUPABASE_KEY from _ENV: " . ($_ENV['SUPABASE_KEY'] ?? 'not set'));
-
-// Try to get the key from all possible sources
-$supabaseKey = '';
-
-// Try _ENV first (since we loaded .env)
-if (isset($_ENV['SUPABASE_KEY']) && !empty($_ENV['SUPABASE_KEY'])) {
-    $supabaseKey = $_ENV['SUPABASE_KEY'];
-    error_log("Got key from _ENV");
-}
-// Try _SERVER next
-else if (isset($_SERVER['SUPABASE_KEY']) && !empty($_SERVER['SUPABASE_KEY'])) {
-    $supabaseKey = $_SERVER['SUPABASE_KEY'];
-    error_log("Got key from _SERVER");
-}
-// Try getenv last
-else if (($envKey = getenv('SUPABASE_KEY')) !== false && !empty($envKey)) {
-    $supabaseKey = $envKey;
-    error_log("Got key from getenv");
-}
-
-$_ENV['SUPABASE_KEY'] = $supabaseKey;
-
-// Log final state
-error_log("Final SUPABASE_KEY length: " . strlen($_ENV['SUPABASE_KEY']));
-error_log("Final SUPABASE_KEY value: " . substr($_ENV['SUPABASE_KEY'], 0, 10) . "...");
-
+// Handle logout
 if (isset($_POST['action']) && $_POST['action'] === 'logout') {
     session_destroy();
-    ob_end_clean();
     header('Location: login.php');
     exit;
 }
 
+// Handle login
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    // Validate environment variables
-    if (empty($_ENV['SUPABASE_KEY'])) {
-        error_log("Missing SUPABASE_KEY after all attempts");
-        ob_end_clean();
-        header('Location: login.php?error=1&message=' . urlencode('Missing required environment variable: SUPABASE_KEY'));
+    // Basic validation
+    if (empty($email) || empty($password)) {
+        header('Location: login.php?error=1&message=' . urlencode('Email and password are required'));
         exit;
     }
 
     try {
-        $client = new Client();
+        $client = new Client([
+            'verify' => false,
+            'http_errors' => false
+        ]);
         
-        // Remove trailing slash from URL if present
-        $baseUrl = rtrim($_ENV['SUPABASE_URL'], '/');
-        error_log("Making request to: " . $baseUrl . '/auth/v1/token?grant_type=password');
-        
-        $response = $client->post($baseUrl . '/auth/v1/token?grant_type=password', [
+        // Authenticate with Supabase
+        $response = $client->post('https://kgqwiwjayaydewyuygxt.supabase.co/auth/v1/token?grant_type=password', [
             'headers' => [
-                'apikey' => $_ENV['SUPABASE_KEY'],
+                'apikey' => 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtncXdpd2pheWF5ZGV3eXV5Z3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyNDI0MTYsImV4cCI6MjA0ODgxODQxNn0._ZUb83R2usvsrSgslrV6Fk4TX1Re3d1clNuU2LPyTtI',
                 'Content-Type' => 'application/json'
             ],
             'json' => [
                 'email' => $email,
-                'password' => $password,
-                'grant_type' => 'password'
-            ],
-            'verify' => false
+                'password' => $password
+            ]
         ]);
 
+        $statusCode = $response->getStatusCode();
         $data = json_decode($response->getBody(), true);
-        error_log("Auth Response: " . print_r($data, true));
 
-        if (isset($data['access_token'])) {
-            $_SESSION['user'] = $data;
-            $_SESSION['user_email'] = $email;
-            ob_end_clean();
-            header('Location: index.php');
+        error_log('Auth Response - Status: ' . $statusCode);
+        error_log('Auth Response - Body: ' . json_encode($data));
+
+        if ($statusCode === 200 && isset($data['access_token'])) {
+            // Hardcode admin check for specific email
+            $isAdmin = ($email === 'admin@wooscraper.com');
+            error_log('Is admin check: ' . ($isAdmin ? 'true' : 'false'));
+
+            // Store session data
+            $_SESSION['user'] = [
+                'id' => $data['user']['id'],
+                'email' => $data['user']['email'],
+                'access_token' => $data['access_token'],
+                'refresh_token' => $data['refresh_token'],
+                'is_admin' => $isAdmin
+            ];
+
+            error_log('Final session data: ' . json_encode($_SESSION['user']));
+
+            if ($isAdmin) {
+                error_log('Redirecting to admin dashboard');
+                header('Location: admin_dashboard.php');
+            } else {
+                error_log('Redirecting to regular dashboard');
+                header('Location: dashboard.php');
+            }
             exit;
         } else {
-            error_log("Auth failed: " . print_r($data, true));
-            ob_end_clean();
-            header('Location: login.php?error=1&message=' . urlencode('Invalid credentials'));
+            $errorMessage = isset($data['error_description']) ? $data['error_description'] : (isset($data['error']) ? $data['error'] : 'Invalid credentials');
+            error_log('Login Error: ' . $errorMessage);
+            header('Location: login.php?error=1&message=' . urlencode($errorMessage));
             exit;
         }
-    } catch (RequestException $e) {
-        error_log("Auth Error: " . $e->getMessage());
-        if ($e->hasResponse()) {
-            $errorBody = json_decode($e->getResponse()->getBody(), true);
-            error_log("Error Response: " . print_r($errorBody, true));
-        }
-        ob_end_clean();
-        header('Location: login.php?error=1&message=' . urlencode('Authentication failed'));
-        exit;
+
     } catch (Exception $e) {
-        error_log("General Error: " . $e->getMessage());
-        ob_end_clean();
-        header('Location: login.php?error=1&message=' . urlencode('System error'));
+        error_log('Login Exception: ' . $e->getMessage());
+        header('Location: login.php?error=1&message=' . urlencode('Authentication failed: ' . $e->getMessage()));
         exit;
     }
-} else {
-    ob_end_clean();
-    header('Location: login.php');
-    exit;
 }
+
+// If no POST data, redirect to login
+header('Location: login.php');
+exit;

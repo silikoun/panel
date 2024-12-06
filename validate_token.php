@@ -1,8 +1,19 @@
 <?php
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Methods: POST');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+require 'vendor/autoload.php';
+require_once 'classes/Database.php';
+require_once 'classes/TokenManager.php';
+
+use Dotenv\Dotenv;
+
+// Enable error logging
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/token_validation.log');
+error_log("=== New token validation request ===");
 
 // Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -10,120 +21,101 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// Enable error logging
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
-ini_set('error_log', __DIR__ . '/error.log');
-
-error_log("=== Starting token validation ===");
-error_log("Request Method: " . $_SERVER['REQUEST_METHOD']);
-error_log("Content-Type: " . ($_SERVER['CONTENT_TYPE'] ?? 'not set'));
-
-// Get and validate the request body
-$rawInput = file_get_contents('php://input');
-error_log("Raw input received: " . $rawInput);
-
-// If the input is empty, try getting from POST
-if (empty($rawInput)) {
-    error_log("Raw input was empty, checking POST data");
-    $token = $_POST['token'] ?? '';
-    if (!empty($token)) {
-        $data = ['token' => $token];
-        error_log("Found token in POST data: " . $token);
-    } else {
-        error_log("No token found in POST data");
-        http_response_code(400);
-        echo json_encode(['valid' => false, 'message' => 'No token provided']);
-        exit;
-    }
-} else {
-    try {
-        $data = json_decode($rawInput, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log("JSON decode error: " . json_last_error_msg());
-            throw new Exception('Invalid JSON format');
-        }
-    } catch (Exception $e) {
-        error_log("Error parsing JSON: " . $e->getMessage());
-        http_response_code(400);
-        echo json_encode([
-            'valid' => false,
-            'message' => 'Invalid request format: ' . $e->getMessage()
-        ]);
-        exit;
-    }
+// Verify request method
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['valid' => false, 'message' => 'Method not allowed']);
+    exit();
 }
 
-$token = $data['token'] ?? '';
-error_log("Token to validate: " . $token);
+// Initialize Database and TokenManager
+try {
+    $database = new Database();
+    $db = $database->connect();
+    $tokenManager = new TokenManager($db);
+} catch (Exception $e) {
+    error_log("Initialization error: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['valid' => false, 'message' => 'System configuration error']);
+    exit();
+}
+
+// Get the token from various possible sources
+$token = null;
+$contentType = $_SERVER["CONTENT_TYPE"] ?? '';
+
+if (strpos($contentType, 'application/json') !== false) {
+    // Handle JSON request
+    $jsonData = json_decode(file_get_contents('php://input'), true);
+    $token = $jsonData['token'] ?? null;
+    error_log("Received JSON request");
+} else if (strpos($contentType, 'application/x-www-form-urlencoded') !== false) {
+    // Handle form data
+    $token = $_POST['token'] ?? null;
+    error_log("Received form data request");
+} else {
+    // Try both sources as fallback
+    $jsonData = json_decode(file_get_contents('php://input'), true);
+    $token = $jsonData['token'] ?? $_POST['token'] ?? null;
+    error_log("Content-Type not specified, attempting to parse both JSON and form data");
+}
 
 if (empty($token)) {
-    error_log("Token is empty");
+    error_log("No token provided in request");
     http_response_code(400);
     echo json_encode(['valid' => false, 'message' => 'No token provided']);
-    exit;
+    exit();
 }
 
 try {
-    // Check if token exists in tokens.json
-    $tokensFile = __DIR__ . '/tokens.json';
-    error_log("Looking for tokens file at: " . $tokensFile);
+    // Check rate limiting
+    if (!$tokenManager->checkRateLimit($_SERVER['REMOTE_ADDR'])) {
+        http_response_code(429);
+        echo json_encode([
+            'valid' => false,
+            'message' => 'Too many validation attempts. Please try again later.'
+        ]);
+        exit();
+    }
+
+    // Validate the token
+    $tokenData = $tokenManager->validateToken($token);
     
-    if (!file_exists($tokensFile)) {
-        error_log("tokens.json file not found!");
-        throw new Exception('Token storage file not found');
+    // Get user data
+    $stmt = $db->prepare("SELECT id, email FROM users WHERE id = ?");
+    $stmt->execute([$tokenData->sub]);
+    $userData = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$userData) {
+        throw new Exception('User not found');
     }
 
-    $tokensContent = file_get_contents($tokensFile);
-    if ($tokensContent === false) {
-        error_log("Failed to read tokens.json");
-        throw new Exception('Could not read token storage file');
-    }
-
-    $tokens = json_decode($tokensContent, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        error_log("Failed to parse tokens.json: " . json_last_error_msg());
-        throw new Exception('Error parsing token storage file');
-    }
-
-    error_log("Number of tokens in file: " . count($tokens));
-    
-    $tokenValid = false;
-    $message = 'Invalid token';
-    
-    foreach ($tokens as $index => $tokenData) {
-        error_log("Checking token " . ($index + 1) . ": " . $tokenData['api_token']);
-        if (trim($tokenData['api_token']) === trim($token)) {
-            $tokenValid = true;
-            $message = 'Token is valid';
-            error_log("Token match found!");
-            break;
-        }
-    }
-
-    if (!$tokenValid) {
-        error_log("No matching token found");
-        error_log("Provided token: " . $token);
-        error_log("Available tokens: " . json_encode(array_column($tokens, 'api_token')));
-    }
-
-    $response = [
-        'valid' => $tokenValid,
-        'message' => $message
-    ];
-    
-    error_log("Sending response: " . json_encode($response));
-    http_response_code($tokenValid ? 200 : 401);
-    echo json_encode($response);
+    // Return success response with user data
+    echo json_encode([
+        'valid' => true,
+        'user' => [
+            'id' => $userData['id'],
+            'email' => $userData['email']
+        ],
+        'expires' => $tokenData->exp
+    ]);
 
 } catch (Exception $e) {
-    error_log("Error during validation: " . $e->getMessage());
-    http_response_code(500);
+    $statusCode = 401; // Default to unauthorized
+    
+    // Determine appropriate status code based on error
+    if (strpos($e->getMessage(), 'Too many') !== false) {
+        $statusCode = 429; // Rate limit
+    } else if (strpos($e->getMessage(), 'System configuration') !== false) {
+        $statusCode = 500; // Server error
+    }
+    
+    error_log("Validation error: " . $e->getMessage());
+    http_response_code($statusCode);
     echo json_encode([
         'valid' => false,
-        'message' => 'Error validating token: ' . $e->getMessage()
+        'message' => $e->getMessage()
     ]);
 }
 
-error_log("=== Token validation completed ===");
+error_log("=== Token validation request completed ===");

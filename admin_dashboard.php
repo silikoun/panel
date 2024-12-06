@@ -1,63 +1,180 @@
 <?php
 ini_set('memory_limit', '1G');
 require 'vendor/autoload.php';
-require_once 'classes/Database.php';
 session_start();
 
-// Check if user is admin
-if (!isset($_SESSION['user']) || !isset($_SESSION['user']['user']['role']) || $_SESSION['user']['user']['role'] !== 'admin') {
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
+use Dotenv\Dotenv;
+
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// Load .env file
+$dotenv = Dotenv::createImmutable(__DIR__);
+try {
+    $dotenv->load();
+    error_log('Successfully loaded .env file');
+} catch (Exception $e) {
+    error_log('Error loading .env file: ' . $e->getMessage());
+    die('Error loading environment configuration');
+}
+
+// Check if user is logged in and is admin
+if (!isset($_SESSION['user']) || !isset($_SESSION['user']['is_admin']) || $_SESSION['user']['is_admin'] !== true) {
+    error_log('Admin access denied. Session data: ' . json_encode($_SESSION));
     header('Location: login.php');
     exit;
 }
 
-// Initialize Database
-$database = new Database();
-$db = $database->connect();
+// Load environment variables
+$supabaseUrl = $_ENV['SUPABASE_URL'] ?? null;
+$supabaseKey = $_ENV['SUPABASE_KEY'] ?? null;
+$supabaseServiceRoleKey = $_ENV['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
 
-// Get all users with their subscription details
-$query = "
-    SELECT 
-        u.id,
-        u.email,
-        u.created_at,
-        u.last_login,
-        s.subscription_type,
-        s.status as subscription_status,
-        s.start_date,
-        s.end_date,
-        COUNT(t.id) as total_tokens,
-        SUM(CASE WHEN t.status = 'active' THEN 1 ELSE 0 END) as active_tokens
-    FROM users u
-    LEFT JOIN subscriptions s ON u.id = s.user_id
-    LEFT JOIN tokens t ON u.id = t.user_id
-    GROUP BY u.id, u.email, u.created_at, u.last_login, s.subscription_type, s.subscription_status, s.start_date, s.end_date
-    ORDER BY u.created_at DESC
-";
-
-try {
-    $stmt = $db->prepare($query);
-    $stmt->execute();
-    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $error = "Error fetching user data: " . $e->getMessage();
+if (!$supabaseUrl || !$supabaseServiceRoleKey) {
+    error_log('Missing required environment variables:');
+    error_log('SUPABASE_URL: ' . ($supabaseUrl ? 'set' : 'missing'));
+    error_log('SUPABASE_SERVICE_ROLE_KEY: ' . ($supabaseServiceRoleKey ? 'set' : 'missing'));
+    die('Missing required Supabase configuration');
 }
 
-// Get system statistics
-$statsQuery = "
-    SELECT 
-        (SELECT COUNT(*) FROM users) as total_users,
-        (SELECT COUNT(*) FROM tokens WHERE status = 'active') as active_tokens,
-        (SELECT COUNT(*) FROM subscriptions WHERE status = 'active') as active_subscriptions,
-        (SELECT COUNT(*) FROM users WHERE DATE(created_at) = CURDATE()) as new_users_today
-";
+error_log("Supabase URL: " . $supabaseUrl);
+error_log("Using Service Role Key length: " . strlen($supabaseServiceRoleKey));
 
+// Initialize Supabase client
 try {
-    $statsStmt = $db->prepare($statsQuery);
-    $statsStmt->execute();
-    $stats = $statsStmt->fetch(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $error = "Error fetching statistics: " . $e->getMessage();
+    // Get project reference from URL
+    $urlParts = parse_url($supabaseUrl);
+    $projectRef = explode('.', $urlParts['host'])[0];
+    error_log("Project reference: " . $projectRef);
+
+    // Create client for auth admin API
+    $client = new Client([
+        'verify' => false,
+        'http_errors' => false
+    ]);
+
+    error_log("Making request to Auth Admin API");
+    error_log("Using service role key: " . substr($supabaseServiceRoleKey, 0, 10) . '...');
+    
+    // Use the Auth API endpoint with full URL
+    $authUrl = "https://{$projectRef}.supabase.co/auth/v1/admin/users";
+    error_log("Full auth URL: " . $authUrl);
+    
+    $response = $client->get($authUrl, [
+        'headers' => [
+            'apikey' => $supabaseServiceRoleKey,
+            'Authorization' => 'Bearer ' . $supabaseServiceRoleKey,
+            'Content-Type' => 'application/json'
+        ]
+    ]);
+
+    $statusCode = $response->getStatusCode();
+    $responseBody = (string) $response->getBody();
+    error_log("Response status: " . $statusCode);
+    error_log("Response body: " . $responseBody);
+
+    if ($statusCode === 401) {
+        error_log("Authentication failed. Response: " . $responseBody);
+        throw new Exception("Authentication failed. Please check your service role key.");
+    }
+
+    if ($statusCode !== 200) {
+        error_log("Error response: " . $responseBody);
+        throw new Exception("Failed to fetch users. Status code: " . $statusCode);
+    }
+
+    $responseData = json_decode($responseBody, true);
+    if (!is_array($responseData) || !isset($responseData['users'])) {
+        error_log("Invalid response format: " . gettype($responseData));
+        throw new Exception('Invalid response format: expected array with users key');
+    }
+
+    error_log("Number of users fetched: " . count($responseData['users']));
+    
+    // Filter out any non-array items and initialize default values
+    $users = [];
+    foreach ($responseData['users'] as $user) {
+        if (!is_array($user)) {
+            error_log("Invalid user data format: " . gettype($user));
+            continue;
+        }
+
+        error_log("Processing user: " . json_encode($user));
+
+        // Ensure app_metadata and user_metadata are arrays
+        if (!isset($user['app_metadata']) || !is_array($user['app_metadata'])) {
+            $user['app_metadata'] = [];
+        }
+        if (!isset($user['user_metadata']) || !is_array($user['user_metadata'])) {
+            $user['user_metadata'] = [];
+        }
+
+        // Set default values
+        $user['user_metadata']['plan'] = $user['user_metadata']['plan'] ?? 'free';
+        
+        // Get user status with null coalescing for banned and confirmed flags
+        $isBanned = ($user['banned'] ?? false) === true;
+        $isConfirmed = ($user['confirmed'] ?? false) === true;
+        $user['status'] = $isBanned ? 'BANNED' : ($isConfirmed ? 'ACTIVE' : 'PENDING');
+        
+        $users[] = $user;
+        
+        error_log("Added user with email: " . ($user['email'] ?? 'No Email') . " and status: " . $user['status']);
+    }
+    
+    error_log("Successfully processed " . count($users) . " users");
+    
+    // Fetch tokens from local storage
+    $tokensFile = __DIR__ . '/tokens.json';
+    $tokens = [];
+    
+    if (file_exists($tokensFile)) {
+        $tokensData = json_decode(file_get_contents($tokensFile), true);
+        if (is_array($tokensData)) {
+            $tokens = $tokensData;
+            error_log("Loaded " . count($tokens) . " tokens from local storage");
+        } else {
+            error_log("Invalid tokens data format in file");
+        }
+    }
+
+    // Calculate statistics
+    $stats = [
+        'total_users' => count($users),
+        'active_tokens' => count(array_filter($tokens, function($t) {
+            return is_array($t) && isset($t['status']) && $t['status'] === 'active';
+        })),
+        'active_subscriptions' => count(array_filter($users, function($u) {
+            return is_array($u) && 
+                   isset($u['user_metadata']['plan']) && 
+                   $u['user_metadata']['plan'] !== 'free';
+        })),
+        'new_users_today' => count(array_filter($users, function($u) {
+            return is_array($u) && 
+                   isset($u['created_at']) && 
+                   date('Y-m-d', strtotime($u['created_at'])) === date('Y-m-d');
+        }))
+    ];
+    
+    error_log("Statistics calculated: " . json_encode($stats));
+
+} catch (Exception $e) {
+    error_log("Error in admin dashboard: " . $e->getMessage());
+    error_log("Stack trace: " . $e->getTraceAsString());
+    $error = "Error fetching data: " . $e->getMessage();
+    $users = [];
+    $tokens = [];
+    $stats = [
+        'total_users' => 0,
+        'active_tokens' => 0,
+        'active_subscriptions' => 0,
+        'new_users_today' => 0
+    ];
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -68,7 +185,6 @@ try {
     <title>Admin Dashboard - WooCommerce Product Scraper</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-gray-100">
     <nav class="bg-white shadow-lg">
@@ -87,6 +203,13 @@ try {
     </nav>
 
     <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <?php if (isset($error)): ?>
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <strong class="font-bold">Error!</strong>
+                <span class="block sm:inline"><?php echo htmlspecialchars($error); ?></span>
+            </div>
+        <?php endif; ?>
+
         <!-- Statistics Cards -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div class="bg-white rounded-lg shadow p-6">
@@ -155,37 +278,71 @@ try {
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
                         <?php foreach ($users as $user): ?>
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="flex items-center">
-                                    <div>
-                                        <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($user['email']); ?></div>
-                                        <div class="text-sm text-gray-500">Joined: <?php echo date('M d, Y', strtotime($user['created_at'])); ?></div>
+                            <?php
+                            // Get tokens for this user
+                            $userTokens = array_filter($tokens, function($t) use ($user) {
+                                return is_array($t) && 
+                                       isset($t['email']) && 
+                                       isset($user['email']) && 
+                                       $t['email'] === $user['email'];
+                            });
+                            
+                            $activeTokens = array_filter($userTokens, function($t) {
+                                return is_array($t) && 
+                                       isset($t['status']) && 
+                                       $t['status'] === 'active';
+                            });
+                            ?>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <div class="ml-4">
+                                            <div class="text-sm font-medium text-gray-900">
+                                                <?php echo htmlspecialchars($user['email'] ?? 'No Email'); ?>
+                                            </div>
+                                            <div class="text-sm text-gray-500">
+                                                Joined: <?php 
+                                                    $joinDate = isset($user['created_at']) ? date('Y-m-d', strtotime($user['created_at'])) : 'Unknown';
+                                                    echo htmlspecialchars($joinDate);
+                                                ?>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm text-gray-900"><?php echo ucfirst($user['subscription_type'] ?? 'None'); ?></div>
-                                <div class="text-sm text-gray-500">
-                                    <?php if ($user['end_date']): ?>
-                                        Expires: <?php echo date('M d, Y', strtotime($user['end_date'])); ?>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm text-gray-900">Active: <?php echo $user['active_tokens']; ?></div>
-                                <div class="text-sm text-gray-500">Total: <?php echo $user['total_tokens']; ?></div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $user['subscription_status'] === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'; ?>">
-                                    <?php echo ucfirst($user['subscription_status'] ?? 'Inactive'); ?>
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <button class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
-                                <button class="text-red-600 hover:text-red-900">Delete</button>
-                            </td>
-                        </tr>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm text-gray-900">
+                                        <?php 
+                                            $plan = isset($user['user_metadata']['plan']) ? ucfirst($user['user_metadata']['plan']) : 'Free';
+                                            echo htmlspecialchars($plan);
+                                        ?>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm text-gray-900">
+                                        Active: <?php echo count($activeTokens); ?>
+                                    </div>
+                                    <div class="text-sm text-gray-500">Total: <?php echo count($userTokens); ?></div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php 
+                                        $statusClass = match($user['status']) {
+                                            'ACTIVE' => 'bg-green-100 text-green-800',
+                                            'BANNED' => 'bg-red-100 text-red-800',
+                                            'PENDING' => 'bg-yellow-100 text-yellow-800',
+                                            default => 'bg-gray-100 text-gray-800'
+                                        };
+                                        echo $statusClass;
+                                    ?>">
+                                        <?php echo htmlspecialchars($user['status']); ?>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <a href="#" class="text-indigo-600 hover:text-indigo-900" 
+                                       onclick="editUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
+                                        Edit
+                                    </a>
+                                </td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
@@ -194,10 +351,31 @@ try {
     </div>
 
     <script>
-        // Add any JavaScript for interactivity here
-        document.addEventListener('DOMContentLoaded', function() {
-            // Initialize any interactive features
-        });
+        async function editUser(userId) {
+            // Implement edit functionality
+            console.log('Edit user:', userId);
+        }
+
+        async function deleteUser(userId) {
+            if (confirm('Are you sure you want to delete this user?')) {
+                try {
+                    const response = await fetch('/api/users/' + userId, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error deleting user');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error deleting user');
+                }
+            }
+        }
     </script>
 </body>
 </html>

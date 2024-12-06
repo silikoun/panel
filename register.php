@@ -155,7 +155,7 @@ try {
             
             // Check if user already has a token
             $existingTokens = array_filter($existingTokens, function($item) use ($email) {
-                return $item['email'] !== $email;
+                return isset($item['email']) && $item['email'] !== $email;
             });
             
             $existingTokens[] = $tokenData;
@@ -199,3 +199,41 @@ try {
 
 // Ensure all output is sent and clean the buffer
 ob_end_flush();
+
+// Create admin user if it doesn't exist
+$createAdmin = true;
+if ($createAdmin) {
+    $adminEmail = 'admin@wooscraper.com';
+    $adminPassword = 'password123';
+
+    try {
+        $adminClient = new Client([
+            'base_uri' => $_ENV['SUPABASE_URL'],
+            'headers' => [
+                'apikey' => $_ENV['SUPABASE_KEY'],
+                'Content-Type' => 'application/json'
+            ],
+            'verify' => false,
+            'timeout' => 30,
+            'connect_timeout' => 30
+        ]);
+
+        $adminResponse = $adminClient->post('/auth/v1/signup', [
+            'json' => [
+                'email' => $adminEmail,
+                'password' => $adminPassword
+            ]
+        ]);
+
+        $adminStatusCode = $adminResponse->getStatusCode();
+        $adminResponseBody = json_decode($adminResponse->getBody()->getContents(), true);
+
+        if ($adminStatusCode === 200 && isset($adminResponseBody['id'])) {
+            error_log("Admin user created successfully");
+        } else {
+            error_log("Failed to create admin user");
+        }
+    } catch (RequestException $e) {
+        error_log("Error creating admin user: " . $e->getMessage());
+    }
+}
