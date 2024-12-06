@@ -24,24 +24,28 @@ try {
         error_log('No .env file found, using system environment variables');
     }
     
-    // Check both getenv() and $_ENV
-    $supabaseUrl = getenv('SUPABASE_URL');
-    if (empty($supabaseUrl)) {
-        $supabaseUrl = $_ENV['SUPABASE_URL'] ?? null;
-    }
-    error_log('SUPABASE_URL: ' . ($supabaseUrl ? 'found' : 'missing'));
+    // Try multiple ways to get environment variables
+    $supabaseUrl = $_SERVER['SUPABASE_URL'] 
+        ?? $_ENV['SUPABASE_URL'] 
+        ?? getenv('SUPABASE_URL') 
+        ?? null;
+    
+    $supabaseKey = $_SERVER['SUPABASE_SERVICE_ROLE_KEY'] 
+        ?? $_ENV['SUPABASE_SERVICE_ROLE_KEY'] 
+        ?? getenv('SUPABASE_SERVICE_ROLE_KEY') 
+        ?? null;
 
-    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
-    if (empty($supabaseKey)) {
-        $supabaseKey = $_ENV['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
-    }
-    error_log('SUPABASE_SERVICE_ROLE_KEY: ' . ($supabaseKey ? 'found' : 'missing'));
+    // Debug logging
+    error_log('Environment variable sources:');
+    error_log('$_SERVER: ' . print_r($_SERVER['SUPABASE_URL'] ?? 'not set', true));
+    error_log('$_ENV: ' . print_r($_ENV['SUPABASE_URL'] ?? 'not set', true));
+    error_log('getenv(): ' . print_r(getenv('SUPABASE_URL'), true));
     
     if (empty($supabaseUrl)) {
-        throw new Exception('SUPABASE_URL is not set');
+        throw new Exception('SUPABASE_URL is not set in any environment variable location');
     }
     if (empty($supabaseKey)) {
-        throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set');
+        throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in any environment variable location');
     }
 
     error_log('Successfully loaded Supabase configuration');
