@@ -11,14 +11,22 @@ use Dotenv\Dotenv;
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// Load .env file
-$dotenv = Dotenv::createImmutable(__DIR__);
+// Load environment configuration
 try {
-    $dotenv->load();
-    error_log('Successfully loaded .env file');
+    if (file_exists(__DIR__ . '/.env')) {
+        $dotenv = Dotenv::createImmutable(__DIR__);
+        $dotenv->load();
+    }
+    
+    $supabaseUrl = getenv('SUPABASE_URL') ?: $_ENV['SUPABASE_URL'] ?? null;
+    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: $_ENV['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
+    
+    if (!$supabaseUrl || !$supabaseKey) {
+        throw new Exception('Missing required Supabase configuration');
+    }
 } catch (Exception $e) {
-    error_log('Error loading .env file: ' . $e->getMessage());
-    die('Error loading environment configuration');
+    error_log('Error loading environment: ' . $e->getMessage());
+    die('Error loading environment configuration: ' . $e->getMessage());
 }
 
 // Check if user is logged in and is admin
@@ -28,20 +36,8 @@ if (!isset($_SESSION['user']) || !isset($_SESSION['user']['is_admin']) || $_SESS
     exit;
 }
 
-// Load environment variables
-$supabaseUrl = $_ENV['SUPABASE_URL'] ?? null;
-$supabaseKey = $_ENV['SUPABASE_KEY'] ?? null;
-$supabaseServiceRoleKey = $_ENV['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
-
-if (!$supabaseUrl || !$supabaseServiceRoleKey) {
-    error_log('Missing required environment variables:');
-    error_log('SUPABASE_URL: ' . ($supabaseUrl ? 'set' : 'missing'));
-    error_log('SUPABASE_SERVICE_ROLE_KEY: ' . ($supabaseServiceRoleKey ? 'set' : 'missing'));
-    die('Missing required Supabase configuration');
-}
-
 error_log("Supabase URL: " . $supabaseUrl);
-error_log("Using Service Role Key length: " . strlen($supabaseServiceRoleKey));
+error_log("Using Service Role Key length: " . strlen($supabaseKey));
 
 // Initialize Supabase client
 try {
@@ -57,7 +53,7 @@ try {
     ]);
 
     error_log("Making request to Auth Admin API");
-    error_log("Using service role key: " . substr($supabaseServiceRoleKey, 0, 10) . '...');
+    error_log("Using service role key: " . substr($supabaseKey, 0, 10) . '...');
     
     // Use the Auth API endpoint with full URL
     $authUrl = "https://{$projectRef}.supabase.co/auth/v1/admin/users";
@@ -65,8 +61,8 @@ try {
     
     $response = $client->get($authUrl, [
         'headers' => [
-            'apikey' => $supabaseServiceRoleKey,
-            'Authorization' => 'Bearer ' . $supabaseServiceRoleKey,
+            'apikey' => $supabaseKey,
+            'Authorization' => 'Bearer ' . $supabaseKey,
             'Content-Type' => 'application/json'
         ]
     ]);
@@ -176,7 +172,6 @@ try {
 }
 
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -286,7 +281,7 @@ try {
                                        isset($user['email']) && 
                                        $t['email'] === $user['email'];
                             });
-                            
+                             
                             $activeTokens = array_filter($userTokens, function($t) {
                                 return is_array($t) && 
                                        isset($t['status']) && 
