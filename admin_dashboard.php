@@ -14,41 +14,41 @@ ini_set('display_errors', 1);
 // Load environment configuration
 try {
     error_log('Current directory: ' . __DIR__);
-    
+
     // Try to load environment variables from env.php
     if (file_exists(__DIR__ . '/env.php')) {
         require_once __DIR__ . '/env.php';
         error_log('Loaded environment from env.php');
     }
-    
+
     // Try to load from .env file for local development
     if (file_exists(__DIR__ . '/.env')) {
         $dotenv = Dotenv::createImmutable(__DIR__);
         $dotenv->load();
         error_log('Loaded environment from .env file');
     }
-    
+
     // Debug: Print all available environment variables
     error_log('Available environment variables after loading:');
     error_log('SUPABASE_URL: ' . (getenv('SUPABASE_URL') ?: 'not set'));
     error_log('SUPABASE_KEY length: ' . strlen(getenv('SUPABASE_KEY') ?: ''));
     error_log('SUPABASE_SERVICE_ROLE_KEY length: ' . strlen(getenv('SUPABASE_SERVICE_ROLE_KEY') ?: ''));
-    
+
     // Get environment variables with detailed error messages
     $supabaseUrl = getenv('SUPABASE_URL');
     if (!$supabaseUrl) {
         error_log('SUPABASE_URL is missing. Available environment variables: ' . print_r(getenv(), true));
         throw new Exception('SUPABASE_URL is not set in environment');
     }
-    
+
     $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
     if (!$supabaseKey) {
         error_log('SUPABASE_SERVICE_ROLE_KEY is missing. Available environment variables: ' . print_r(getenv(), true));
         throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in environment');
     }
-    
+
     error_log('Successfully loaded environment variables');
-    
+
     // Try to get environment variables directly from environment
     $supabaseUrl = getenv('SUPABASE_URL');
     if (!$supabaseUrl) {
@@ -59,29 +59,29 @@ try {
             $supabaseUrl = $envContents['SUPABASE_URL'] ?? null;
         }
     }
-        
+
     if (!$supabaseUrl) {
         throw new Exception('SUPABASE_URL is not set in any environment variable location');
     }
-    
+
     error_log('Successfully loaded SUPABASE_URL: ' . $supabaseUrl);
-    
+
     $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
     if (!$supabaseKey && file_exists($envFile)) {
         $envContents = parse_ini_file($envFile);
         $supabaseKey = $envContents['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
     }
-        
+
     if (!$supabaseKey) {
         throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in any environment variable location');
     }
-    
+
     error_log('Successfully loaded SUPABASE_SERVICE_ROLE_KEY (length: ' . strlen($supabaseKey) . ')');
 
     // Debug logging
     error_log('Environment variable sources:');
     error_log('getenv(): ' . print_r(getenv('SUPABASE_URL'), true));
-    
+
     if (empty($supabaseUrl)) {
         throw new Exception('SUPABASE_URL is not set in any environment variable location');
     }
@@ -136,35 +136,109 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-gray-100">
-    <div class="min-h-full">
-        <nav class="bg-gray-800">
-            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div class="flex h-16 items-center justify-between">
+<body class="bg-gray-50">
+    <div class="min-h-screen flex">
+        <!-- Sidebar -->
+        <div class="bg-gray-900 text-white w-64 py-6 flex flex-col">
+            <div class="px-6 mb-8">
+                <h1 class="text-2xl font-bold">Admin Panel</h1>
+            </div>
+            <nav class="flex-1">
+                <a href="#" class="flex items-center px-6 py-3 bg-gray-800">
+                    <i class="fas fa-users mr-3"></i>
+                    <span>Users</span>
+                </a>
+                <a href="#" class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors">
+                    <i class="fas fa-chart-line mr-3"></i>
+                    <span>Analytics</span>
+                </a>
+                <a href="#" class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors">
+                    <i class="fas fa-cog mr-3"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
+            <div class="px-6 py-4">
+                <a href="logout.php" class="flex items-center text-gray-300 hover:text-white transition-colors">
+                    <i class="fas fa-sign-out-alt mr-3"></i>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Top Navigation -->
+            <header class="bg-white shadow-sm">
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-gray-800">Dashboard Overview</h2>
                     <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <span class="text-white">Admin Dashboard</span>
-                        </div>
-                    </div>
-                    <div class="flex items-center">
-                        <a href="logout.php" class="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Logout</a>
+                        <span class="text-gray-600 mr-4"><?php echo htmlspecialchars($_SESSION['user']['email'] ?? ''); ?></span>
+                        <img class="h-8 w-8 rounded-full" src="https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff" alt="Profile">
                     </div>
                 </div>
-            </div>
-        </nav>
+            </header>
 
-        <header class="bg-white shadow">
-            <div class="mx-auto max-w-7xl py-6 px-4 sm:px-6 lg:px-8">
-                <h1 class="text-3xl font-bold tracking-tight text-gray-900">Users</h1>
-            </div>
-        </header>
+            <!-- Statistics Cards -->
+            <div class="p-6 bg-gray-50">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <div class="bg-white rounded-lg shadow-sm p-6">
+                        <div class="flex items-center">
+                            <div class="p-3 rounded-full bg-blue-500 bg-opacity-10">
+                                <i class="fas fa-users text-blue-500 text-xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-gray-500 text-sm">Total Users</h3>
+                                <p class="text-2xl font-semibold text-gray-800"><?php echo count($users); ?></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm p-6">
+                        <div class="flex items-center">
+                            <div class="p-3 rounded-full bg-green-500 bg-opacity-10">
+                                <i class="fas fa-crown text-green-500 text-xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-gray-500 text-sm">Premium Users</h3>
+                                <p class="text-2xl font-semibold text-gray-800">
+                                    <?php 
+                                    echo count(array_filter($users, function($user) {
+                                        return isset($user['user_metadata']['plan']) && $user['user_metadata']['plan'] !== 'free';
+                                    }));
+                                    ?>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm p-6">
+                        <div class="flex items-center">
+                            <div class="p-3 rounded-full bg-purple-500 bg-opacity-10">
+                                <i class="fas fa-clock text-purple-500 text-xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-gray-500 text-sm">Active Today</h3>
+                                <p class="text-2xl font-semibold text-gray-800">
+                                    <?php 
+                                    echo count(array_filter($users, function($user) {
+                                        return isset($user['last_sign_in_at']) && 
+                                               strtotime($user['last_sign_in_at']) > strtotime('-24 hours');
+                                    }));
+                                    ?>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-        <main>
-            <div class="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8">
+                <!-- Error Messages -->
                 <?php if (isset($error)): ?>
-                    <div class="rounded-md bg-red-50 p-4 mb-4">
+                    <div class="rounded-md bg-red-50 p-4 mb-6">
                         <div class="flex">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-exclamation-circle text-red-400"></i>
+                            </div>
                             <div class="ml-3">
                                 <h3 class="text-sm font-medium text-red-800">Error</h3>
                                 <div class="mt-2 text-sm text-red-700">
@@ -175,57 +249,70 @@ try {
                     </div>
                 <?php endif; ?>
 
-                <div class="px-4 sm:px-6 lg:px-8">
-                    <div class="mt-8 flow-root">
-                        <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-                            <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-                                <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
-                                    <table class="min-w-full divide-y divide-gray-300">
-                                        <thead class="bg-gray-50">
-                                            <tr>
-                                                <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Email</th>
-                                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Plan</th>
-                                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
-                                                <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                                                    <span class="sr-only">Actions</span>
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-gray-200 bg-white">
-                                            <?php foreach ($users as $user): ?>
-                                                <tr>
-                                                    <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                                                        <?php echo htmlspecialchars($user['email'] ?? ''); ?>
-                                                    </td>
-                                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                                        <?php echo htmlspecialchars($user['user_metadata']['plan'] ?? 'free'); ?>
-                                                    </td>
-                                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                                        <?php echo htmlspecialchars($user['status'] ?? 'ACTIVE'); ?>
-                                                    </td>
-                                                    <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                                                        <a href="#" class="text-indigo-600 hover:text-indigo-900 mr-4" 
-                                                           onclick="viewUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
-                                                            View
-                                                        </a>
-                                                        <a href="#" class="text-indigo-600 hover:text-indigo-900" 
-                                                           onclick="editUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
-                                                            Edit
-                                                        </a>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
+                <!-- Users Table -->
+                <div class="bg-white rounded-lg shadow-sm">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-semibold text-gray-800">User Management</h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+                                    <th scope="col" class="relative px-6 py-3">
+                                        <span class="sr-only">Actions</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <?php foreach ($users as $user): ?>
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="flex items-center">
+                                                <img class="h-8 w-8 rounded-full" src="https://ui-avatars.com/api/?name=<?php echo urlencode($user['email']); ?>&background=0D8ABC&color=fff" alt="">
+                                                <div class="ml-4">
+                                                    <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($user['email']); ?></div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo ($user['user_metadata']['plan'] ?? 'free') === 'free' ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'; ?>">
+                                                <?php echo htmlspecialchars($user['user_metadata']['plan'] ?? 'free'); ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo isset($user['banned_until']) ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'; ?>">
+                                                <?php echo isset($user['banned_until']) ? 'Banned' : 'Active'; ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <?php 
+                                            $lastLogin = isset($user['last_sign_in_at']) ? new DateTime($user['last_sign_in_at']) : null;
+                                            echo $lastLogin ? $lastLogin->format('Y-m-d H:i') : 'Never';
+                                            ?>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <button onclick="viewUser('<?php echo $user['id']; ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button onclick="editUser('<?php echo $user['id']; ?>')" class="text-indigo-600 hover:text-indigo-900">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
-        </main>
+        </div>
     </div>
 
+    <!-- Modals -->
     <!-- View User Modal -->
     <div id="viewUserModal" class="fixed z-10 inset-0 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
         <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
