@@ -1,12 +1,14 @@
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   const tokenInput = document.getElementById('apiToken');
   const saveButton = document.getElementById('saveToken');
   const statusDiv = document.getElementById('status');
 
-  // Load existing token if any
-  chrome.storage.sync.get(['apiToken'], function(result) {
-    if (result.apiToken) {
-      tokenInput.value = result.apiToken;
+  // Check current authentication status
+  chrome.runtime.sendMessage({ type: 'CHECK_AUTH' }, function(response) {
+    if (response.isAuthenticated) {
+      showAuthenticatedState(response.user);
+    } else {
+      showUnauthenticatedState();
     }
   });
 
@@ -19,23 +21,75 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 3000);
   }
 
-  saveButton.addEventListener('click', function() {
-    const token = tokenInput.value.trim();
+  function showAuthenticatedState(user) {
+    const container = document.querySelector('.container');
+    container.innerHTML = `
+      <h2>WooCommerce Scraper</h2>
+      <div class="user-info">
+        <p>Logged in as: ${user.email}</p>
+      </div>
+      <button id="logoutButton">Logout</button>
+      <div id="status" class="status"></div>
+    `;
+
+    // Add logout handler
+    document.getElementById('logoutButton').addEventListener('click', handleLogout);
+  }
+
+  function showUnauthenticatedState() {
+    const container = document.querySelector('.container');
+    container.innerHTML = `
+      <h2>WooCommerce Scraper</h2>
+      <div class="input-group">
+        <label for="apiToken">API Key</label>
+        <input type="text" id="apiToken" placeholder="Paste your API key here">
+      </div>
+      <button id="saveToken">Save API Key</button>
+      <div id="status" class="status"></div>
+    `;
+
+    // Re-add save handler
+    document.getElementById('saveToken').addEventListener('click', handleSaveToken);
+  }
+
+  async function handleLogout() {
+    chrome.runtime.sendMessage({ type: 'LOGOUT' }, function(response) {
+      if (response.success) {
+        showUnauthenticatedState();
+        showStatus('Logged out successfully');
+      }
+    });
+  }
+
+  async function handleSaveToken() {
+    const token = document.getElementById('apiToken').value.trim();
     
     if (!token) {
-      showStatus('Please enter an API token', true);
+      showStatus('Please enter an API key', true);
       return;
     }
 
-    // Save token to Chrome storage
-    chrome.storage.sync.set({ apiToken: token }, function() {
-      showStatus('Token saved successfully!');
-      
-      // Notify background script
-      chrome.runtime.sendMessage({ 
-        type: 'TOKEN_UPDATED',
-        token: token 
-      });
+    // Try to set the API key
+    chrome.runtime.sendMessage({ 
+      type: 'SET_API_KEY',
+      apiKey: token 
+    }, function(response) {
+      if (response.success) {
+        // Check auth status again to update UI
+        chrome.runtime.sendMessage({ type: 'CHECK_AUTH' }, function(response) {
+          if (response.isAuthenticated) {
+            showAuthenticatedState(response.user);
+            showStatus('API key saved successfully!');
+          }
+        });
+      } else {
+        showStatus('Invalid API key', true);
+      }
     });
-  });
+  }
+
+  // Add initial event listener for save button
+  if (saveButton) {
+    saveButton.addEventListener('click', handleSaveToken);
+  }
 });

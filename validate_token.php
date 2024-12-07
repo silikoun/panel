@@ -1,19 +1,17 @@
 <?php
-header('Access-Control-Allow-Origin: *');
-header('Content-Type: application/json');
-header('Access-Control-Allow-Methods: POST');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
-
-require 'vendor/autoload.php';
-require_once 'classes/Database.php';
-require_once 'classes/TokenManager.php';
+require_once __DIR__ . '/vendor/autoload.php';
 
 use Dotenv\Dotenv;
 
-// Enable error logging
-ini_set('log_errors', 1);
-ini_set('error_log', __DIR__ . '/token_validation.log');
-error_log("=== New token validation request ===");
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// Set headers
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 // Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -21,101 +19,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// Verify request method
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['valid' => false, 'message' => 'Method not allowed']);
-    exit();
+// Load environment variables
+try {
+    if (file_exists(__DIR__ . '/.env')) {
+        $dotenv = Dotenv::createImmutable(__DIR__);
+        $dotenv->load();
+        error_log("Loaded .env file");
+    } else {
+        error_log(".env file not found");
+    }
+} catch (Exception $e) {
+    error_log("Error loading .env file: " . $e->getMessage());
 }
 
-// Initialize Database and TokenManager
-try {
-    $database = new Database();
-    $db = $database->connect();
-    $tokenManager = new TokenManager($db);
-} catch (Exception $e) {
-    error_log("Initialization error: " . $e->getMessage());
+// Function to get environment variable from multiple sources
+function getEnvVar($name) {
+    $value = getenv($name);
+    if ($value === false) {
+        $value = isset($_ENV[$name]) ? $_ENV[$name] : null;
+    }
+    if ($value === null) {
+        $value = isset($_SERVER[$name]) ? $_SERVER[$name] : null;
+    }
+    return $value;
+}
+
+// Check required environment variables
+$requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET_KEY'];
+$missingVars = [];
+
+foreach ($requiredEnvVars as $var) {
+    $value = getEnvVar($var);
+    if (!$value) {
+        $missingVars[] = $var;
+        error_log("Missing required environment variable: " . $var);
+    } else {
+        error_log("Found environment variable: " . $var . " (length: " . strlen($value) . ")");
+    }
+}
+
+if (!empty($missingVars)) {
     http_response_code(500);
-    echo json_encode(['valid' => false, 'message' => 'System configuration error']);
-    exit();
-}
-
-// Get the token from various possible sources
-$token = null;
-$contentType = $_SERVER["CONTENT_TYPE"] ?? '';
-
-if (strpos($contentType, 'application/json') !== false) {
-    // Handle JSON request
-    $jsonData = json_decode(file_get_contents('php://input'), true);
-    $token = $jsonData['token'] ?? null;
-    error_log("Received JSON request");
-} else if (strpos($contentType, 'application/x-www-form-urlencoded') !== false) {
-    // Handle form data
-    $token = $_POST['token'] ?? null;
-    error_log("Received form data request");
-} else {
-    // Try both sources as fallback
-    $jsonData = json_decode(file_get_contents('php://input'), true);
-    $token = $jsonData['token'] ?? $_POST['token'] ?? null;
-    error_log("Content-Type not specified, attempting to parse both JSON and form data");
-}
-
-if (empty($token)) {
-    error_log("No token provided in request");
-    http_response_code(400);
-    echo json_encode(['valid' => false, 'message' => 'No token provided']);
-    exit();
-}
-
-try {
-    // Check rate limiting
-    if (!$tokenManager->checkRateLimit($_SERVER['REMOTE_ADDR'])) {
-        http_response_code(429);
-        echo json_encode([
-            'valid' => false,
-            'message' => 'Too many validation attempts. Please try again later.'
-        ]);
-        exit();
-    }
-
-    // Validate the token
-    $tokenData = $tokenManager->validateToken($token);
-    
-    // Get user data
-    $stmt = $db->prepare("SELECT id, email FROM users WHERE id = ?");
-    $stmt->execute([$tokenData->sub]);
-    $userData = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$userData) {
-        throw new Exception('User not found');
-    }
-
-    // Return success response with user data
-    echo json_encode([
-        'valid' => true,
-        'user' => [
-            'id' => $userData['id'],
-            'email' => $userData['email']
-        ],
-        'expires' => $tokenData->exp
-    ]);
-
-} catch (Exception $e) {
-    $statusCode = 401; // Default to unauthorized
-    
-    // Determine appropriate status code based on error
-    if (strpos($e->getMessage(), 'Too many') !== false) {
-        $statusCode = 429; // Rate limit
-    } else if (strpos($e->getMessage(), 'System configuration') !== false) {
-        $statusCode = 500; // Server error
-    }
-    
-    error_log("Validation error: " . $e->getMessage());
-    http_response_code($statusCode);
     echo json_encode([
         'valid' => false,
-        'message' => $e->getMessage()
+        'message' => 'System configuration error: Missing environment variables: ' . implode(', ', $missingVars)
     ]);
+    exit();
 }
 
-error_log("=== Token validation request completed ===");
+// Get the token from either the Authorization header or POST body
+$token = null;
+$headers = apache_request_headers();
+
+if (isset($headers['Authorization'])) {
+    $auth = $headers['Authorization'];
+    if (preg_match('/Bearer\s+(.*)$/i', $auth, $matches)) {
+        $token = $matches[1];
+        error_log("Token found in Authorization header");
+    }
+} else {
+    $input = file_get_contents('php://input');
+    $data = json_decode($input, true);
+    if (isset($data['token'])) {
+        $token = $data['token'];
+        error_log("Token found in request body");
+    }
+}
+
+if (!$token) {
+    http_response_code(400);
+    echo json_encode([
+        'valid' => false,
+        'message' => 'No token provided'
+    ]);
+    exit();
+}
+
+try {
+    require_once __DIR__ . '/classes/TokenManager.php';
+    $tokenManager = new TokenManager();
+    $result = $tokenManager->validateToken($token);
+    
+    if ($result['valid']) {
+        http_response_code(200);
+    } else {
+        http_response_code(401);
+    }
+    
+    echo json_encode($result);
+    
+} catch (Exception $e) {
+    error_log("Error validating token: " . $e->getMessage());
+    error_log("Stack trace: " . $e->getTraceAsString());
+    
+    http_response_code(500);
+    echo json_encode([
+        'valid' => false,
+        'message' => 'Error validating token: ' . $e->getMessage()
+    ]);
+}

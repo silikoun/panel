@@ -22,6 +22,8 @@
       padding: 8px;
       border: 1px solid #ccc;
       border-radius: 4px;
+      width: 100%;
+      box-sizing: border-box;
     }
     button {
       padding: 8px 16px;
@@ -30,6 +32,7 @@
       border: none;
       border-radius: 4px;
       cursor: pointer;
+      width: 100%;
     }
     button:hover {
       background-color: #7e22ce;
@@ -38,6 +41,7 @@
       padding: 8px;
       border-radius: 4px;
       display: none;
+      text-align: center;
     }
     .success {
       background-color: #dcfce7;
@@ -47,18 +51,35 @@
       background-color: #fee2e2;
       color: #991b1b;
     }
+    .user-info {
+      background-color: #f3f4f6;
+      padding: 12px;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .user-info p {
+      margin: 0;
+      color: #374151;
+    }
+    #logoutButton {
+      background-color: #dc2626;
+    }
+    #logoutButton:hover {
+      background-color: #b91c1c;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h2>WooCommerce Scraper</h2>
     <div class="input-group">
-      <label for="apiToken">API Token</label>
-      <input type="text" id="apiToken" placeholder="Paste your API token here">
+      <label for="apiToken">API Key</label>
+      <input type="text" id="apiToken" placeholder="Paste your API key here">
     </div>
-    <button id="saveToken">Save Token</button>
+    <button id="saveToken">Save API Key</button>
     <div id="status" class="status"></div>
   </div>
+  <script src="auth.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

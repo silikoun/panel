@@ -5,12 +5,19 @@
   "description": "Scrape WooCommerce product data",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://panel-production-5838.up.railway.app/*"
   ],
   "action": {
     "default_popup": "popup.html"
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

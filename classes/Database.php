@@ -4,21 +4,24 @@ class Database {
     private $db_name;
     private $username;
     private $password;
+    private $port;
     private $conn;
 
     public function __construct() {
-        // Load environment variables
-        $this->host = getenv('DB_HOST') ?: 'localhost';
-        $this->db_name = getenv('DB_NAME') ?: 'woo_scraper';
-        $this->username = getenv('DB_USER') ?: 'root';
-        $this->password = getenv('DB_PASS') ?: '';
+        // Parse Supabase connection string
+        $url = parse_url(getenv('SUPABASE_URL'));
+        $this->host = str_replace('.supabase.co', '.supabase.co:5432', $url['host']);
+        $this->db_name = 'postgres';
+        $this->username = 'postgres';
+        $this->password = getenv('SUPABASE_SERVICE_ROLE_KEY');
+        $this->port = 5432;
     }
 
     public function connect() {
         $this->conn = null;
 
         try {
-            $dsn = "mysql:host=" . $this->host . ";dbname=" . $this->db_name . ";charset=utf8mb4";
+            $dsn = "pgsql:host=" . $this->host . ";port=" . $this->port . ";dbname=" . $this->db_name . ";sslmode=require;";
             $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -29,7 +32,7 @@ class Database {
             return $this->conn;
         } catch(PDOException $e) {
             error_log("Database Connection Error: " . $e->getMessage());
-            throw new Exception("Database connection failed. Please check your configuration.");
+            throw new Exception("Database connection failed. Please check your configuration: " . $e->getMessage());
         }
     }
 }

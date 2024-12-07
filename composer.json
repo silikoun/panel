@@ -1,9 +1,9 @@
 {
     "require": {
         "php": "^7.4|^8.0",
-        "vlucas/phpdotenv": "^5.5",
         "guzzlehttp/guzzle": "^7.8",
-        "firebase/php-jwt": "^6.9"
+        "firebase/php-jwt": "^6.9",
+        "supabase/supabase-php": "^0.0.3"
     },
     "config": {
         "platform": {
