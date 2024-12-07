@@ -114,16 +114,58 @@ if (!$supabaseUrl || !$supabaseKey) {
 $client = new GuzzleHttp\Client();
 
 try {
-    // Fetch users from Supabase
-    $response = $client->request('GET', $supabaseUrl . '/auth/v1/admin/users', [
-        'headers' => [
-            'Authorization' => 'Bearer ' . $supabaseKey,
-            'apikey' => $supabaseKey
-        ]
+    // Fetch users from Supabase with better error handling
+    $headers = [
+        'Authorization' => 'Bearer ' . $supabaseKey,
+        'apikey' => $supabaseKey,
+        'Content-Type' => 'application/json',
+        'Prefer' => 'return=representation'
+    ];
+
+    // First, get users from auth.users
+    $authResponse = $client->request('GET', $supabaseUrl . '/auth/v1/admin/users', [
+        'headers' => $headers
     ]);
 
-    $users = json_decode($response->getBody(), true);
+    $users = json_decode($authResponse->getBody(), true);
+
+    // Then, get additional user data from public.users table
+    $publicUsersResponse = $client->request('GET', $supabaseUrl . '/rest/v1/users', [
+        'headers' => $headers
+    ]);
+
+    $publicUsers = json_decode($publicUsersResponse->getBody(), true);
+
+    // Create a map of public user data
+    $publicUserMap = [];
+    foreach ($publicUsers as $publicUser) {
+        if (isset($publicUser['id'])) {
+            $publicUserMap[$publicUser['id']] = $publicUser;
+        }
+    }
+
+    // Merge the data
+    foreach ($users as &$user) {
+        if (isset($user['id']) && isset($publicUserMap[$user['id']])) {
+            $user = array_merge($user, $publicUserMap[$user['id']]);
+        }
+        
+        // Ensure user_metadata exists
+        if (!isset($user['user_metadata'])) {
+            $user['user_metadata'] = [];
+        }
+        
+        // Log the user data for debugging
+        error_log('User data: ' . print_r($user, true));
+    }
+    unset($user); // Break the reference
+
+    // Log the total number of users found
+    error_log('Total users found: ' . count($users));
+
 } catch (Exception $e) {
+    error_log('Error fetching users: ' . $e->getMessage());
+    error_log('Error trace: ' . $e->getTraceAsString());
     $error = 'Failed to fetch users: ' . $e->getMessage();
     $users = [];
 }
@@ -315,31 +357,69 @@ try {
                                 <tr class="user-row">
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="flex items-center">
-                                            <div class="flex-shrink-0">
+                                            <div class="flex-shrink-0 h-10 w-10">
                                                 <div class="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
                                                     <span class="text-indigo-600 font-medium text-lg">
-                                                        <?php echo isset($user['email']) ? strtoupper(substr($user['email'], 0, 1)) : '?'; ?>
+                                                        <?php 
+                                                        $email = $user['email'] ?? null;
+                                                        if ($email) {
+                                                            echo htmlspecialchars(strtoupper(substr($email, 0, 1)));
+                                                        } else {
+                                                            $name = $user['user_metadata']['name'] ?? null;
+                                                            if ($name) {
+                                                                echo htmlspecialchars(strtoupper(substr($name, 0, 1)));
+                                                            } else {
+                                                                echo '?';
+                                                            }
+                                                        }
+                                                        ?>
                                                     </span>
                                                 </div>
                                             </div>
                                             <div class="ml-4">
                                                 <div class="text-sm font-medium text-gray-900">
-                                                    <?php echo htmlspecialchars($user['email'] ?? 'No Email'); ?>
+                                                    <?php 
+                                                    $displayName = $user['email'] ?? $user['user_metadata']['name'] ?? 'No Email';
+                                                    echo htmlspecialchars($displayName);
+                                                    ?>
                                                 </div>
                                                 <div class="text-sm text-gray-500">
-                                                    ID: <?php echo isset($user['id']) ? substr($user['id'], 0, 8) : 'N/A'; ?>...
+                                                    <?php
+                                                    if (isset($user['id'])) {
+                                                        echo 'ID: ' . htmlspecialchars(substr($user['id'], 0, 8)) . '...';
+                                                    } else {
+                                                        echo 'ID: N/A';
+                                                    }
+                                                    ?>
                                                 </div>
                                             </div>
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo isset($user['confirmed_at']) ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'; ?>">
-                                            <?php echo isset($user['confirmed_at']) ? 'Active' : 'Pending'; ?>
+                                        <?php
+                                        $status = 'Pending';
+                                        $statusClass = 'bg-yellow-100 text-yellow-800';
+                                        
+                                        if (isset($user['confirmed_at'])) {
+                                            $status = 'Active';
+                                            $statusClass = 'bg-green-100 text-green-800';
+                                        } elseif (isset($user['banned_until']) && $user['banned_until'] !== null) {
+                                            $status = 'Banned';
+                                            $statusClass = 'bg-red-100 text-red-800';
+                                        }
+                                        ?>
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $statusClass; ?>">
+                                            <?php echo htmlspecialchars($status); ?>
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         <?php 
-                                        $plan = isset($user['user_metadata']['plan']) ? $user['user_metadata']['plan'] : 'free';
+                                        $plan = 'free';
+                                        if (isset($user['user_metadata']['plan'])) {
+                                            $plan = $user['user_metadata']['plan'];
+                                        } elseif (isset($publicUserMap[$user['id']]['plan'])) {
+                                            $plan = $publicUserMap[$user['id']]['plan'];
+                                        }
                                         $planClass = $plan === 'premium' ? 'text-purple-600' : 'text-gray-600';
                                         ?>
                                         <span class="<?php echo htmlspecialchars($planClass); ?> font-medium">
@@ -349,8 +429,13 @@ try {
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         <?php 
                                         if (isset($user['created_at'])) {
-                                            $created_at = new DateTime($user['created_at']);
-                                            echo htmlspecialchars($created_at->format('M j, Y'));
+                                            try {
+                                                $created_at = new DateTime($user['created_at']);
+                                                echo htmlspecialchars($created_at->format('M j, Y'));
+                                            } catch (Exception $e) {
+                                                echo 'N/A';
+                                                error_log('Error formatting created_at date: ' . $e->getMessage());
+                                            }
                                         } else {
                                             echo 'N/A';
                                         }
@@ -359,8 +444,13 @@ try {
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         <?php 
                                         if (isset($user['last_sign_in_at'])) {
-                                            $last_login = new DateTime($user['last_sign_in_at']);
-                                            echo htmlspecialchars($last_login->format('M j, Y H:i'));
+                                            try {
+                                                $last_login = new DateTime($user['last_sign_in_at']);
+                                                echo htmlspecialchars($last_login->format('M j, Y H:i'));
+                                            } catch (Exception $e) {
+                                                echo 'Never';
+                                                error_log('Error formatting last_sign_in_at date: ' . $e->getMessage());
+                                            }
                                         } else {
                                             echo 'Never';
                                         }
