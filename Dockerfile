@@ -1,4 +1,4 @@
-FROM php:8.1-apache
+FROM php:8.1-fpm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     libxml2-dev \
     zip \
-    unzip
+    unzip \
+    nginx
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -16,23 +17,23 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 # Install PHP extensions
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
 
-# Enable Apache modules
-RUN a2enmod rewrite headers
-
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy composer files
+# Copy composer files first
 COPY composer.json composer.lock ./
 
-# Install dependencies
-RUN composer install --no-scripts --no-autoloader --no-dev
+# Install composer dependencies
+RUN composer install --no-dev --optimize-autoloader --no-scripts
 
 # Copy application files
 COPY . .
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # Create storage directory and set permissions
 RUN mkdir -p storage/logs storage/cache \
@@ -40,20 +41,8 @@ RUN mkdir -p storage/logs storage/cache \
     && find /var/www/html -type f -exec chmod 644 {} \; \
     && find /var/www/html -type d -exec chmod 755 {} \;
 
-# Generate optimized autoload files
-RUN composer dump-autoload --optimize
-
-# Configure Apache
-RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
-COPY docker/000-default.conf /etc/apache2/sites-available/000-default.conf
-
-# Set environment variables
-ENV APACHE_DOCUMENT_ROOT=/var/www/html
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
-
-# Expose port
+# Expose port 80
 EXPOSE 80
 
-# Start Apache
-CMD ["apache2-foreground"]
+# Start PHP-FPM and nginx
+CMD service php8.1-fpm start && nginx -g 'daemon off;'
