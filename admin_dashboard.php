@@ -128,7 +128,6 @@ try {
     $users = [];
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -316,19 +315,19 @@ try {
                                 <tr class="user-row">
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="flex items-center">
-                                            <div class="flex-shrink-0 h-10 w-10">
+                                            <div class="flex-shrink-0">
                                                 <div class="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
                                                     <span class="text-indigo-600 font-medium text-lg">
-                                                        <?php echo strtoupper(substr($user['email'], 0, 1)); ?>
+                                                        <?php echo isset($user['email']) ? strtoupper(substr($user['email'], 0, 1)) : '?'; ?>
                                                     </span>
                                                 </div>
                                             </div>
                                             <div class="ml-4">
                                                 <div class="text-sm font-medium text-gray-900">
-                                                    <?php echo htmlspecialchars($user['email']); ?>
+                                                    <?php echo htmlspecialchars($user['email'] ?? 'No Email'); ?>
                                                 </div>
                                                 <div class="text-sm text-gray-500">
-                                                    ID: <?php echo substr($user['id'], 0, 8); ?>...
+                                                    ID: <?php echo isset($user['id']) ? substr($user['id'], 0, 8) : 'N/A'; ?>...
                                                 </div>
                                             </div>
                                         </div>
@@ -343,34 +342,38 @@ try {
                                         $plan = isset($user['user_metadata']['plan']) ? $user['user_metadata']['plan'] : 'free';
                                         $planClass = $plan === 'premium' ? 'text-purple-600' : 'text-gray-600';
                                         ?>
-                                        <span class="<?php echo $planClass; ?> font-medium">
-                                            <?php echo ucfirst($plan); ?>
+                                        <span class="<?php echo htmlspecialchars($planClass); ?> font-medium">
+                                            <?php echo ucfirst(htmlspecialchars($plan)); ?>
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         <?php 
-                                        $created_at = new DateTime($user['created_at']);
-                                        echo $created_at->format('M j, Y');
+                                        if (isset($user['created_at'])) {
+                                            $created_at = new DateTime($user['created_at']);
+                                            echo htmlspecialchars($created_at->format('M j, Y'));
+                                        } else {
+                                            echo 'N/A';
+                                        }
                                         ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         <?php 
                                         if (isset($user['last_sign_in_at'])) {
                                             $last_login = new DateTime($user['last_sign_in_at']);
-                                            echo $last_login->format('M j, Y H:i');
+                                            echo htmlspecialchars($last_login->format('M j, Y H:i'));
                                         } else {
                                             echo 'Never';
                                         }
                                         ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <button onclick="viewUser('<?php echo $user['id']; ?>')" class="text-indigo-600 hover:text-indigo-900 mr-3">
+                                        <button onclick="viewUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')" class="text-indigo-600 hover:text-indigo-900 mr-3">
                                             <i class="fas fa-eye"></i>
                                         </button>
-                                        <button onclick="editUser('<?php echo $user['id']; ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
+                                        <button onclick="editUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
                                             <i class="fas fa-edit"></i>
                                         </button>
-                                        <button onclick="confirmDeleteUser('<?php echo $user['id']; ?>')" class="text-red-600 hover:text-red-900">
+                                        <button onclick="confirmDeleteUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')" class="text-red-600 hover:text-red-900">
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </td>
