@@ -1,102 +1,106 @@
 <?php
-ini_set('memory_limit', '1G');
-require 'vendor/autoload.php';
 session_start();
+require_once 'vendor/autoload.php';
+require_once 'auth/SupabaseAuth.php';
+require_once 'includes/functions.php';
 
-use GuzzleHttp\Client;
+// Initialize Supabase client
+$supabase = new SupabaseAuth();
 
-// Load .env file first if it exists
-if (file_exists(__DIR__ . '/.env')) {
-    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-    try {
-        $dotenv->load();
-        error_log("Loaded .env file");
-    } catch (Exception $e) {
-        error_log('Error loading .env file: ' . $e->getMessage());
-    }
-}
-
-// Set Supabase URL and Key
-$_ENV['SUPABASE_URL'] = 'https://kgqwiwjayaydewyuygxt.supabase.co';
-
-// Try to get the key from all possible sources
-$supabaseKey = '';
-
-// Try _ENV first (since we loaded .env)
-if (isset($_ENV['SUPABASE_KEY']) && !empty($_ENV['SUPABASE_KEY'])) {
-    $supabaseKey = $_ENV['SUPABASE_KEY'];
-    error_log("Got key from _ENV");
-}
-// Try _SERVER next
-else if (isset($_SERVER['SUPABASE_KEY']) && !empty($_SERVER['SUPABASE_KEY'])) {
-    $supabaseKey = $_SERVER['SUPABASE_KEY'];
-    error_log("Got key from _SERVER");
-}
-// Try getenv last
-else if (($envKey = getenv('SUPABASE_KEY')) !== false && !empty($envKey)) {
-    $supabaseKey = $envKey;
-    error_log("Got key from getenv");
-}
-
-$_ENV['SUPABASE_KEY'] = $supabaseKey;
-
-$isAuthenticated = isset($_SESSION['user']);
-$error = null;
-
-// Redirect to login if not authenticated
-if (!$isAuthenticated) {
+// Check if user is logged in
+if (!isset($_SESSION['user'])) {
     header('Location: login.php');
     exit;
 }
 
-// Get user's current token
-$currentToken = '';
-if (isset($_SESSION['user']['api_token'])) {
-    $currentToken = $_SESSION['user']['api_token'];
-} else {
-    // Try to get token from tokens.json as fallback
-    $tokensFile = __DIR__ . '/tokens.json';
-    if (file_exists($tokensFile)) {
-        $tokens = json_decode(file_get_contents($tokensFile), true) ?? [];
-        $userEmail = $_SESSION['user']['email'] ?? '';
-        
-        foreach ($tokens as $token) {
-            if ($token['email'] === $userEmail) {
-                $currentToken = $token['api_token'];
-                // Update session with the token
-                $_SESSION['user']['api_token'] = $currentToken;
-                break;
-            }
-        }
-    }
+// Check if user is admin
+if (!isset($_SESSION['user']['is_admin']) || $_SESSION['user']['is_admin'] !== true) {
+    header('Location: login.php?error=unauthorized');
+    exit;
 }
 
-// Validate environment variables
-if (empty($_ENV['SUPABASE_KEY'])) {
-    error_log("Missing SUPABASE_KEY after all attempts");
-    $isInitialized = false;
-    $error = 'Missing required environment variable: SUPABASE_KEY';
-} else {
-    try {
-        // Remove trailing slash from URL if present
-        $baseUrl = rtrim($_ENV['SUPABASE_URL'], '/');
-        error_log("Using Supabase URL: " . $baseUrl);
-        
-        $client = new Client([
-            'base_uri' => $baseUrl,
-            'headers' => [
-                'apikey' => $_ENV['SUPABASE_KEY'],
-                'Content-Type' => 'application/json'
-            ],
-            'verify' => false,
-            'http_errors' => false
-        ]);
-        $isInitialized = true;
-    } catch (Exception $e) {
-        $isInitialized = false;
-        error_log('Client initialization error: ' . $e->getMessage());
-        $error = $e->getMessage();
+// Get dashboard statistics
+try {
+    // Get total users
+    $usersQuery = $supabase->createClient()
+        ->from('users')
+        ->select('*', ['count' => 'exact'])
+        ->execute();
+    $totalUsers = $usersQuery->count ?? 0;
+
+    // Get active subscriptions
+    $subscriptionsQuery = $supabase->createClient()
+        ->from('subscriptions')
+        ->select('*', ['count' => 'exact'])
+        ->eq('status', 'active')
+        ->execute();
+    $activeSubscriptions = $subscriptionsQuery->count ?? 0;
+
+    // Calculate monthly revenue
+    $firstDayOfMonth = date('Y-m-01');
+    $revenueQuery = $supabase->createClient()
+        ->from('subscriptions')
+        ->select('plan')
+        ->gte('created_at', $firstDayOfMonth)
+        ->eq('status', 'active')
+        ->execute();
+    
+    $monthlyRevenue = 0;
+    $planPrices = [
+        'basic' => 9.99,
+        'pro' => 19.99,
+        'enterprise' => 49.99
+    ];
+    
+    foreach ($revenueQuery->data as $subscription) {
+        $monthlyRevenue += $planPrices[strtolower($subscription->plan)] ?? 0;
     }
+
+    // Get new users today
+    $today = date('Y-m-d');
+    $newUsersQuery = $supabase->createClient()
+        ->from('users')
+        ->select('*', ['count' => 'exact'])
+        ->gte('created_at', $today)
+        ->execute();
+    $newUsersToday = $newUsersQuery->count ?? 0;
+
+    // Get recent activity logs
+    $logsQuery = $supabase->createClient()
+        ->from('activity_logs')
+        ->select('*')
+        ->order('created_at', ['ascending' => false])
+        ->limit(10)
+        ->execute();
+    $recentLogs = $logsQuery->data ?? [];
+
+    // Get user growth data for chart
+    $sixMonthsAgo = date('Y-m-d', strtotime('-6 months'));
+    $userGrowthQuery = $supabase->createClient()
+        ->from('users')
+        ->select('created_at')
+        ->gte('created_at', $sixMonthsAgo)
+        ->execute();
+    
+    $userGrowthData = [];
+    $monthLabels = [];
+    for ($i = 5; $i >= 0; $i--) {
+        $month = date('M', strtotime("-$i months"));
+        $monthLabels[] = $month;
+        $userGrowthData[] = 0;
+    }
+
+    foreach ($userGrowthQuery->data as $user) {
+        $month = date('M', strtotime($user->created_at));
+        $index = array_search($month, $monthLabels);
+        if ($index !== false) {
+            $userGrowthData[$index]++;
+        }
+    }
+
+} catch (Exception $e) {
+    error_log("Dashboard Error: " . $e->getMessage());
+    $error = "An error occurred while loading the dashboard.";
 }
 ?>
 <!DOCTYPE html>
@@ -104,119 +108,220 @@ if (empty($_ENV['SUPABASE_KEY'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - WooCommerce Product Scraper</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>Admin Dashboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bg-gray-100">
-    <nav class="bg-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
-                        <a href="index.php" class="text-xl font-bold text-gray-800 hover:text-indigo-600">WooScraper</a>
-                    </div>
-                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                        <a href="dashboard.php" class="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            Dashboard
-                        </a>
-                    </div>
-                </div>
-                <div class="flex items-center">
-                    <form action="auth.php" method="post" class="ml-4">
-                        <input type="hidden" name="action" value="logout">
-                        <button type="submit" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
-                            Logout
-                        </button>
-                    </form>
-                </div>
+    <div class="min-h-screen flex">
+        <!-- Sidebar -->
+        <nav class="bg-gray-900 w-64 px-4 py-6 flex flex-col">
+            <div class="flex items-center mb-8">
+                <h2 class="text-2xl font-bold text-white">Admin Panel</h2>
             </div>
-        </div>
-    </nav>
-
-    <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <?php if ($error): ?>
-            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-                <strong class="font-bold">Error!</strong>
-                <span class="block sm:inline"><?php echo htmlspecialchars($error); ?></span>
+            
+            <div class="flex-1">
+                <nav class="space-y-2">
+                    <a href="dashboard.php" class="flex items-center text-gray-300 bg-gray-800 px-4 py-2 rounded">
+                        <i class="fas fa-home w-6"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="users.php" class="flex items-center text-gray-300 hover:bg-gray-800 px-4 py-2 rounded">
+                        <i class="fas fa-users w-6"></i>
+                        <span>Users</span>
+                    </a>
+                    <a href="subscriptions.php" class="flex items-center text-gray-300 hover:bg-gray-800 px-4 py-2 rounded">
+                        <i class="fas fa-credit-card w-6"></i>
+                        <span>Subscriptions</span>
+                    </a>
+                    <a href="settings.php" class="flex items-center text-gray-300 hover:bg-gray-800 px-4 py-2 rounded">
+                        <i class="fas fa-cog w-6"></i>
+                        <span>Settings</span>
+                    </a>
+                </nav>
             </div>
-        <?php endif; ?>
+            
+            <div class="mt-auto">
+                <a href="logout.php" class="flex items-center text-gray-300 hover:bg-gray-800 px-4 py-2 rounded">
+                    <i class="fas fa-sign-out-alt w-6"></i>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </nav>
 
-        <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg">
-            <div class="p-6">
-                <h2 class="text-2xl font-bold mb-4">Welcome to Your Dashboard</h2>
-                
-                <!-- API Token Section -->
-                <div class="mb-8 bg-white overflow-hidden shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <h3 class="text-lg font-medium text-gray-900 mb-4">API Token</h3>
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <div class="flex justify-between items-center mb-4">
-                                <p class="text-sm text-gray-600">Use this token to authenticate your Chrome extension</p>
-                                <button onclick="copyToken()" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
-                                    Copy Token
-                                </button>
+        <!-- Main Content -->
+        <div class="flex-1 overflow-x-hidden">
+            <!-- Top Bar -->
+            <header class="bg-white shadow-md p-4 flex justify-between items-center">
+                <h1 class="text-xl font-semibold">Dashboard Overview</h1>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-600">Welcome, Admin</span>
+                    <img src="https://ui-avatars.com/api/?name=Admin" class="w-8 h-8 rounded-full">
+                </div>
+            </header>
+
+            <!-- Dashboard Content -->
+            <main class="p-6">
+                <?php if (isset($error)): ?>
+                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                        <?php echo htmlspecialchars($error); ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <!-- Total Users -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div class="flex items-center">
+                            <div class="p-3 rounded-full bg-blue-500 bg-opacity-10">
+                                <i class="fas fa-users text-blue-500 text-2xl"></i>
                             </div>
-                            <div class="relative">
-                                <input type="text" id="apiToken" 
-                                    class="w-full px-3 py-2 border rounded-lg bg-gray-100 text-gray-800" 
-                                    value="<?php echo htmlspecialchars($currentToken); ?>" 
-                                    readonly>
-                                <div id="tokenMessage" class="text-sm text-green-600 hidden mt-2">Token copied to clipboard!</div>
+                            <div class="ml-4">
+                                <h3 class="text-gray-500 text-sm">Total Users</h3>
+                                <p class="text-2xl font-semibold"><?php echo number_format($totalUsers); ?></p>
                             </div>
-                            <div class="mt-4 bg-blue-50 p-4 rounded-lg">
-                                <h4 class="text-sm font-medium text-blue-800 mb-2">How to use your API token:</h4>
-                                <ol class="list-decimal list-inside space-y-1 text-sm text-blue-700">
-                                    <li>Copy your API token</li>
-                                    <li>Open the WooCommerce Scraper extension</li>
-                                    <li>Paste the token in the extension's settings</li>
-                                    <li>Click Save to connect your account</li>
-                                </ol>
+                        </div>
+                    </div>
+
+                    <!-- Active Subscriptions -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div class="flex items-center">
+                            <div class="p-3 rounded-full bg-green-500 bg-opacity-10">
+                                <i class="fas fa-credit-card text-green-500 text-2xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-gray-500 text-sm">Active Subscriptions</h3>
+                                <p class="text-2xl font-semibold"><?php echo number_format($activeSubscriptions); ?></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Monthly Revenue -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div class="flex items-center">
+                            <div class="p-3 rounded-full bg-yellow-500 bg-opacity-10">
+                                <i class="fas fa-dollar-sign text-yellow-500 text-2xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-gray-500 text-sm">Monthly Revenue</h3>
+                                <p class="text-2xl font-semibold">$<?php echo number_format($monthlyRevenue, 2); ?></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- New Users Today -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div class="flex items-center">
+                            <div class="p-3 rounded-full bg-purple-500 bg-opacity-10">
+                                <i class="fas fa-user-plus text-purple-500 text-2xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-gray-500 text-sm">New Users Today</h3>
+                                <p class="text-2xl font-semibold"><?php echo number_format($newUsersToday); ?></p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Statistics Cards -->
-                <div class="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                    <div class="bg-white overflow-hidden shadow rounded-lg">
-                        <div class="px-4 py-5 sm:p-6">
-                            <h3 class="text-lg font-medium text-gray-900">Total Products</h3>
-                            <div class="mt-1 text-3xl font-semibold text-gray-900">0</div>
-                        </div>
+                <!-- Charts -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- User Growth Chart -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-lg font-semibold mb-4">User Growth</h3>
+                        <canvas id="userGrowthChart"></canvas>
                     </div>
 
-                    <div class="bg-white overflow-hidden shadow rounded-lg">
-                        <div class="px-4 py-5 sm:p-6">
-                            <h3 class="text-lg font-medium text-gray-900">Active Tasks</h3>
-                            <div class="mt-1 text-3xl font-semibold text-gray-900">0</div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white overflow-hidden shadow rounded-lg">
-                        <div class="px-4 py-5 sm:p-6">
-                            <h3 class="text-lg font-medium text-gray-900">Completed Tasks</h3>
-                            <div class="mt-1 text-3xl font-semibold text-gray-900">0</div>
-                        </div>
+                    <!-- Revenue Chart -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-lg font-semibold mb-4">Revenue Overview</h3>
+                        <canvas id="revenueChart"></canvas>
                     </div>
                 </div>
-            </div>
+
+                <!-- Recent Activity -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold mb-4">Recent Activity</h3>
+                    <div class="space-y-4">
+                        <?php foreach ($recentLogs as $log): ?>
+                            <div class="flex items-center p-4 bg-gray-50 rounded-lg">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-clock text-gray-400"></i>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm font-medium text-gray-900">
+                                        <?php echo htmlspecialchars($log->action); ?>
+                                    </p>
+                                    <p class="text-sm text-gray-500">
+                                        <?php echo htmlspecialchars($log->user_email); ?> • 
+                                        <?php echo date('M j, Y H:i', strtotime($log->created_at)); ?>
+                                    </p>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </main>
         </div>
     </div>
 
-    <!-- Token Copy Script -->
+    <!-- Initialize Charts -->
     <script>
-        function copyToken() {
-            const tokenInput = document.getElementById('apiToken');
-            const messageDiv = document.getElementById('tokenMessage');
-            
-            tokenInput.select();
-            document.execCommand('copy');
-            
-            messageDiv.classList.remove('hidden');
-            setTimeout(() => {
-                messageDiv.classList.add('hidden');
-            }, 2000);
-        }
+        // User Growth Chart
+        const userCtx = document.getElementById('userGrowthChart').getContext('2d');
+        new Chart(userCtx, {
+            type: 'line',
+            data: {
+                labels: <?php echo json_encode($monthLabels); ?>,
+                datasets: [{
+                    label: 'New Users',
+                    data: <?php echo json_encode($userGrowthData); ?>,
+                    borderColor: 'rgb(59, 130, 246)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    }
+                }
+            }
+        });
+
+        // Revenue Chart
+        const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+        new Chart(revenueCtx, {
+            type: 'bar',
+            data: {
+                labels: <?php echo json_encode($monthLabels); ?>,
+                datasets: [{
+                    label: 'Revenue ($)',
+                    data: [1200, 1900, 3000, 5000, 4000, <?php echo $monthlyRevenue; ?>],
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    }
+                }
+            }
+        });
     </script>
 </body>
 </html>

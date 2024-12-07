@@ -16,6 +16,7 @@ class SupabaseAuth {
     public function signIn($email, $password) {
         $client = new GuzzleHttp\Client();
         try {
+            // Sign in with email and password
             $response = $client->post($this->supabaseUrl . '/auth/v1/token?grant_type=password', [
                 'headers' => [
                     'apikey' => $this->supabaseKey,
@@ -27,7 +28,27 @@ class SupabaseAuth {
                 ]
             ]);
 
-            return json_decode($response->getBody(), true);
+            $authData = json_decode($response->getBody(), true);
+
+            // Fetch user data including admin status
+            $userResponse = $client->get($this->supabaseUrl . '/rest/v1/users?select=*', [
+                'headers' => [
+                    'apikey' => $this->supabaseServiceKey,
+                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey
+                ]
+            ]);
+
+            $users = json_decode($userResponse->getBody(), true);
+            $currentUser = array_filter($users, function($user) use ($email) {
+                return strtolower($user['email']) === strtolower($email);
+            });
+
+            $currentUser = reset($currentUser);
+            
+            // Merge auth data with user data
+            $authData['user']['is_admin'] = isset($currentUser['is_admin']) ? $currentUser['is_admin'] : false;
+            
+            return $authData;
         } catch (GuzzleHttp\Exception\ClientException $e) {
             $response = $e->getResponse();
             throw new Exception($response->getBody());
@@ -79,7 +100,7 @@ class SupabaseAuth {
                     'apikey' => $this->supabaseServiceKey,
                     'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
-                    'Prefer': 'return=minimal'
+                    'Prefer' => 'return=minimal'
                 ],
                 'json' => $subscription
             ]);
@@ -405,6 +426,27 @@ class SupabaseAuth {
             ]);
         } catch (Exception $e) {
             error_log('Failed to deactivate token: ' . $e->getMessage());
+        }
+    }
+
+    public function logActivity($userId, $userEmail, $action, $details = null) {
+        try {
+            $data = [
+                'user_id' => $userId,
+                'user_email' => $userEmail,
+                'action' => $action,
+                'details' => $details ? json_encode($details) : null
+            ];
+
+            $response = $this->supabase
+                ->from('activity_logs')
+                ->insert($data)
+                ->execute();
+
+            return $response->data[0] ?? null;
+        } catch (Exception $e) {
+            error_log("Error logging activity: " . $e->getMessage());
+            return null;
         }
     }
 }
