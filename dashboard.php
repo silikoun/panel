@@ -14,10 +14,9 @@ if (!isset($_SESSION['user'])) {
     exit;
 }
 
-// Check if user is admin
-if (!isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'admin') {
-    error_log('Access denied: User role is ' . ($_SESSION['user']['role'] ?? 'not set'));
-    header('Location: login.php?error=unauthorized');
+// Check if user is trying to access wrong dashboard
+if (isset($_SESSION['user']['role']) && $_SESSION['user']['role'] === 'admin') {
+    header('Location: admin_dashboard.php');
     exit;
 }
 
@@ -27,23 +26,24 @@ try {
     error_log('Client created successfully');
 
     // Get total users
-    $usersQuery = $client->from('users')
+    $usersQuery = $client
+        ->from('users')
         ->select('*', ['count' => 'exact'])
         ->execute();
     $totalUsers = $usersQuery->count ?? 0;
-    error_log('Total users: ' . $totalUsers);
 
     // Get active subscriptions
-    $subscriptionsQuery = $client->from('subscriptions')
+    $subscriptionsQuery = $client
+        ->from('subscriptions')
         ->select('*', ['count' => 'exact'])
         ->eq('status', 'active')
         ->execute();
     $activeSubscriptions = $subscriptionsQuery->count ?? 0;
-    error_log('Active subscriptions: ' . $activeSubscriptions);
 
     // Calculate monthly revenue
     $firstDayOfMonth = date('Y-m-01');
-    $revenueQuery = $client->from('subscriptions')
+    $revenueQuery = $client
+        ->from('subscriptions')
         ->select('plan')
         ->gte('created_at', $firstDayOfMonth)
         ->eq('status', 'active')
@@ -53,34 +53,35 @@ try {
     $planPrices = [
         'basic' => 9.99,
         'pro' => 19.99,
-        'premium' => 29.99
+        'enterprise' => 49.99
     ];
-
+    
     foreach ($revenueQuery->data as $subscription) {
         $monthlyRevenue += $planPrices[strtolower($subscription->plan)] ?? 0;
     }
-    error_log('Monthly revenue: ' . $monthlyRevenue);
 
     // Get new users today
     $today = date('Y-m-d');
-    $newUsersQuery = $client->from('users')
+    $newUsersQuery = $client
+        ->from('users')
         ->select('*', ['count' => 'exact'])
         ->gte('created_at', $today)
         ->execute();
     $newUsersToday = $newUsersQuery->count ?? 0;
 
     // Get recent activity logs
-    $logsQuery = $client->from('activity_logs')
+    $logsQuery = $client
+        ->from('activity_logs')
         ->select('*')
         ->order('created_at', ['ascending' => false])
         ->limit(10)
         ->execute();
     $recentLogs = $logsQuery->data ?? [];
-    error_log('Recent logs fetched: ' . count($recentLogs));
 
     // Get user growth data for chart
     $sixMonthsAgo = date('Y-m-d', strtotime('-6 months'));
-    $userGrowthQuery = $client->from('users')
+    $userGrowthQuery = $client
+        ->from('users')
         ->select('created_at')
         ->gte('created_at', $sixMonthsAgo)
         ->execute();
@@ -111,7 +112,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard</title>
+    <title>Client Dashboard</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -130,7 +131,7 @@ try {
         <!-- Sidebar -->
         <nav class="bg-gray-900 w-64 px-4 py-6 flex flex-col">
             <div class="flex items-center mb-8">
-                <h2 class="text-2xl font-bold text-white">Admin Panel</h2>
+                <h2 class="text-2xl font-bold text-white">Client Panel</h2>
             </div>
             
             <div class="flex-1">
@@ -138,14 +139,6 @@ try {
                     <a href="dashboard.php" class="flex items-center text-gray-300 bg-gray-800 px-4 py-2 rounded">
                         <i class="fas fa-home w-6"></i>
                         <span>Dashboard</span>
-                    </a>
-                    <a href="users.php" class="flex items-center text-gray-300 hover:bg-gray-800 px-4 py-2 rounded">
-                        <i class="fas fa-users w-6"></i>
-                        <span>Users</span>
-                    </a>
-                    <a href="subscriptions.php" class="flex items-center text-gray-300 hover:bg-gray-800 px-4 py-2 rounded">
-                        <i class="fas fa-credit-card w-6"></i>
-                        <span>Subscriptions</span>
                     </a>
                     <a href="settings.php" class="flex items-center text-gray-300 hover:bg-gray-800 px-4 py-2 rounded">
                         <i class="fas fa-cog w-6"></i>
@@ -168,8 +161,8 @@ try {
             <header class="bg-white shadow-md p-4 flex justify-between items-center">
                 <h1 class="text-xl font-semibold">Dashboard Overview</h1>
                 <div class="flex items-center space-x-4">
-                    <span class="text-gray-600">Welcome, Admin</span>
-                    <img src="https://ui-avatars.com/api/?name=Admin" class="w-8 h-8 rounded-full">
+                    <span class="text-gray-600">Welcome, Client</span>
+                    <img src="https://ui-avatars.com/api/?name=Client" class="w-8 h-8 rounded-full">
                 </div>
             </header>
 
