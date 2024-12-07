@@ -1,7 +1,7 @@
 <?php
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-API-Key');
+header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key');
 header('Content-Type: application/json');
 
 // Handle preflight requests
@@ -11,14 +11,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../auth/SupabaseAuth.php';
+
+$auth = new SupabaseAuth();
 
 try {
-    // Get API key from header
     $headers = apache_request_headers();
+    
+    // Check if this is a token verification request
+    if (isset($headers['Authorization'])) {
+        if (preg_match('/Bearer\s(\S+)/', $headers['Authorization'], $matches)) {
+            $token = $matches[1];
+            $result = $auth->verifyExtensionToken($token);
+            
+            if ($result === false) {
+                http_response_code(401);
+                echo json_encode(['error' => 'Invalid or expired token']);
+                exit;
+            }
+
+            echo json_encode([
+                'valid' => true,
+                'user_id' => $result['user_id'],
+                'expires_at' => $result['expires_at']
+            ]);
+            exit;
+        }
+    }
+    
+    // If no Authorization header, check for API key
     $apiKey = isset($headers['X-API-Key']) ? $headers['X-API-Key'] : null;
     
     if (!$apiKey) {
-        throw new Exception('No API key provided');
+        throw new Exception('No authentication provided');
     }
     
     // Query Supabase for user with this API key
@@ -49,25 +74,26 @@ try {
     
     // Check if API key is expired
     if (isset($user['api_token_expires'])) {
-        $expiryDate = strtotime($user['api_token_expires']);
-        if ($expiryDate < time()) {
-            throw new Exception('API key expired');
+        $expiryDate = new DateTime($user['api_token_expires']);
+        if ($expiryDate < new DateTime()) {
+            throw new Exception('API key has expired');
         }
     }
     
-    // Return success with user info
+    // Generate a new extension token
+    $tokenResult = $auth->generateExtensionToken($user['id']);
+    
     echo json_encode([
         'success' => true,
+        'token' => $tokenResult['token'],
+        'expires_at' => $tokenResult['expires_at'],
         'user' => [
             'id' => $user['id'],
             'email' => $user['email']
         ]
     ]);
-    
+
 } catch (Exception $e) {
-    http_response_code(401);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage()
-    ]);
+    http_response_code(400);
+    echo json_encode(['error' => $e->getMessage()]);
 }

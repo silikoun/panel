@@ -288,4 +288,123 @@ class SupabaseAuth {
             return false;
         }
     }
+
+    public function generateExtensionToken($userId) {
+        $client = new GuzzleHttp\Client();
+        try {
+            // Generate a secure random token
+            $token = bin2hex(random_bytes(32));
+            
+            // Current timestamp and expiration (30 days from now)
+            $currentTime = time();
+            $expirationTime = $currentTime + (30 * 24 * 60 * 60);
+            
+            // Deactivate any existing active tokens for this user
+            $client->patch($this->supabaseUrl . '/rest/v1/extension_tokens', [
+                'headers' => [
+                    'apikey' => $this->supabaseServiceKey,
+                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
+                    'Content-Type' => 'application/json',
+                    'Prefer' => 'return=minimal'
+                ],
+                'json' => [
+                    'is_active' => false
+                ],
+                'query' => [
+                    'user_id' => 'eq.' . $userId,
+                    'is_active' => 'eq.true'
+                ]
+            ]);
+
+            // Store the new token
+            $response = $client->post($this->supabaseUrl . '/rest/v1/extension_tokens', [
+                'headers' => [
+                    'apikey' => $this->supabaseServiceKey,
+                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
+                    'Content-Type' => 'application/json',
+                    'Prefer' => 'return=minimal'
+                ],
+                'json' => [
+                    'user_id' => $userId,
+                    'token' => $token,
+                    'created_at' => date('Y-m-d H:i:s', $currentTime),
+                    'expires_at' => date('Y-m-d H:i:s', $expirationTime),
+                    'is_active' => true
+                ]
+            ]);
+            
+            return [
+                'token' => $token,
+                'expires_at' => $expirationTime
+            ];
+        } catch (Exception $e) {
+            error_log('Failed to generate extension token: ' . $e->getMessage());
+            throw new Exception('Failed to generate extension token');
+        }
+    }
+
+    public function verifyExtensionToken($token) {
+        $client = new GuzzleHttp\Client();
+        try {
+            // Query the token
+            $response = $client->get($this->supabaseUrl . '/rest/v1/extension_tokens', [
+                'headers' => [
+                    'apikey' => $this->supabaseServiceKey,
+                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey
+                ],
+                'query' => [
+                    'token' => 'eq.' . $token,
+                    'is_active' => 'eq.true',
+                    'select' => 'user_id,expires_at'
+                ]
+            ]);
+
+            $tokenData = json_decode($response->getBody(), true);
+            
+            if (empty($tokenData)) {
+                return false;
+            }
+
+            $tokenInfo = $tokenData[0];
+            $expirationTime = strtotime($tokenInfo['expires_at']);
+            
+            // Check if token is expired
+            if (time() > $expirationTime) {
+                // Deactivate expired token
+                $this->deactivateToken($token);
+                return false;
+            }
+
+            return [
+                'valid' => true,
+                'user_id' => $tokenInfo['user_id'],
+                'expires_at' => $expirationTime
+            ];
+        } catch (Exception $e) {
+            error_log('Token verification failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function deactivateToken($token) {
+        $client = new GuzzleHttp\Client();
+        try {
+            $client->patch($this->supabaseUrl . '/rest/v1/extension_tokens', [
+                'headers' => [
+                    'apikey' => $this->supabaseServiceKey,
+                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
+                    'Content-Type' => 'application/json',
+                    'Prefer' => 'return=minimal'
+                ],
+                'json' => [
+                    'is_active' => false
+                ],
+                'query' => [
+                    'token' => 'eq.' . $token
+                ]
+            ]);
+        } catch (Exception $e) {
+            error_log('Failed to deactivate token: ' . $e->getMessage());
+        }
+    }
 }
