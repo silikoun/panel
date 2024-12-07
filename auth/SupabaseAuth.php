@@ -36,7 +36,7 @@ class SupabaseAuth {
                     'apikey' => $this->supabaseServiceKey,
                     'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
-                    'Prefer': 'return=representation'
+                    'Prefer' => 'return=representation'
                 ]
             ]);
 
@@ -59,7 +59,7 @@ class SupabaseAuth {
                         'apikey' => $this->supabaseServiceKey,
                         'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                         'Content-Type' => 'application/json',
-                        'Prefer': 'return=representation'
+                        'Prefer' => 'return=representation'
                     ],
                     'json' => $newUser
                 ]);
