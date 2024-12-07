@@ -15,7 +15,8 @@ if (!isset($_SESSION['user'])) {
 }
 
 // Check if user is admin
-if (!isset($_SESSION['user']['is_admin']) || $_SESSION['user']['is_admin'] !== true) {
+if (!isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'admin') {
+    error_log('Access denied: User role is ' . ($_SESSION['user']['role'] ?? 'not set'));
     header('Location: login.php?error=unauthorized');
     exit;
 }

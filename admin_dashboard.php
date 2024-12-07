@@ -1,25 +1,35 @@
 <?php
-ini_set('memory_limit', '1G');
-require 'vendor/autoload.php';
 session_start();
+require_once 'vendor/autoload.php';
+require_once 'auth/SupabaseAuth.php';
+require_once 'auth/SupabaseClient.php';
+require_once 'includes/functions.php';
 
-// Check if user is logged in and is admin
-if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'admin') {
-    error_log('Access denied: User not logged in or not admin');
-    error_log('Session data: ' . print_r($_SESSION, true));
-    header('Location: login.php?error=1&message=' . urlencode('Access denied. Please log in as admin.'));
+// Initialize Supabase client
+$supabase = new SupabaseAuth();
+
+// Check if user is logged in
+if (!isset($_SESSION['user'])) {
+    header('Location: login.php');
     exit;
 }
 
-error_log('Admin access granted for user: ' . $_SESSION['user']['email']);
+// Check if user is admin
+if (!isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'admin') {
+    error_log('Access denied: User role is ' . ($_SESSION['user']['role'] ?? 'not set'));
+    header('Location: login.php?error=unauthorized');
+    exit;
+}
 
-use GuzzleHttp\Client;
-use GuzzleHttp\Exception\RequestException;
-use Dotenv\Dotenv;
+ini_set('memory_limit', '1G');
 
 // Enable error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
+use Dotenv\Dotenv;
 
 // Load environment configuration
 try {
