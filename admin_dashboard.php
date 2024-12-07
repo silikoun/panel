@@ -14,41 +14,41 @@ ini_set('display_errors', 1);
 // Load environment configuration
 try {
     error_log('Current directory: ' . __DIR__);
-
+    
     // Try to load environment variables from env.php
     if (file_exists(__DIR__ . '/env.php')) {
         require_once __DIR__ . '/env.php';
         error_log('Loaded environment from env.php');
     }
-
+    
     // Try to load from .env file for local development
     if (file_exists(__DIR__ . '/.env')) {
         $dotenv = Dotenv::createImmutable(__DIR__);
         $dotenv->load();
         error_log('Loaded environment from .env file');
     }
-
+    
     // Debug: Print all available environment variables
-    error_log('Available environment variables after loading:');
+    error_log('Available environment variables after loading:' . print_r(getenv(), true));
     error_log('SUPABASE_URL: ' . (getenv('SUPABASE_URL') ?: 'not set'));
     error_log('SUPABASE_KEY length: ' . strlen(getenv('SUPABASE_KEY') ?: ''));
     error_log('SUPABASE_SERVICE_ROLE_KEY length: ' . strlen(getenv('SUPABASE_SERVICE_ROLE_KEY') ?: ''));
-
+    
     // Get environment variables with detailed error messages
     $supabaseUrl = getenv('SUPABASE_URL');
     if (!$supabaseUrl) {
         error_log('SUPABASE_URL is missing. Available environment variables: ' . print_r(getenv(), true));
         throw new Exception('SUPABASE_URL is not set in environment');
     }
-
+    
     $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
     if (!$supabaseKey) {
         error_log('SUPABASE_SERVICE_ROLE_KEY is missing. Available environment variables: ' . print_r(getenv(), true));
         throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in environment');
     }
-
+    
     error_log('Successfully loaded environment variables');
-
+    
     // Try to get environment variables directly from environment
     $supabaseUrl = getenv('SUPABASE_URL');
     if (!$supabaseUrl) {
@@ -59,29 +59,29 @@ try {
             $supabaseUrl = $envContents['SUPABASE_URL'] ?? null;
         }
     }
-
+        
     if (!$supabaseUrl) {
         throw new Exception('SUPABASE_URL is not set in any environment variable location');
     }
-
+    
     error_log('Successfully loaded SUPABASE_URL: ' . $supabaseUrl);
-
+    
     $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
     if (!$supabaseKey && file_exists($envFile)) {
         $envContents = parse_ini_file($envFile);
         $supabaseKey = $envContents['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
     }
-
+        
     if (!$supabaseKey) {
         throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in any environment variable location');
     }
-
+    
     error_log('Successfully loaded SUPABASE_SERVICE_ROLE_KEY (length: ' . strlen($supabaseKey) . ')');
 
     // Debug logging
     error_log('Environment variable sources:');
     error_log('getenv(): ' . print_r(getenv('SUPABASE_URL'), true));
-
+    
     if (empty($supabaseUrl)) {
         throw new Exception('SUPABASE_URL is not set in any environment variable location');
     }
@@ -136,183 +136,254 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body class="bg-gray-50">
-    <div class="min-h-screen flex">
-        <!-- Sidebar -->
-        <div class="bg-gray-900 text-white w-64 py-6 flex flex-col">
-            <div class="px-6 mb-8">
-                <h1 class="text-2xl font-bold">Admin Panel</h1>
-            </div>
-            <nav class="flex-1">
-                <a href="#" class="flex items-center px-6 py-3 bg-gray-800">
-                    <i class="fas fa-users mr-3"></i>
-                    <span>Users</span>
-                </a>
-                <a href="#" class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors">
-                    <i class="fas fa-chart-line mr-3"></i>
-                    <span>Analytics</span>
-                </a>
-                <a href="#" class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors">
-                    <i class="fas fa-cog mr-3"></i>
-                    <span>Settings</span>
-                </a>
-            </nav>
-            <div class="px-6 py-4">
-                <a href="logout.php" class="flex items-center text-gray-300 hover:text-white transition-colors">
-                    <i class="fas fa-sign-out-alt mr-3"></i>
-                    <span>Logout</span>
-                </a>
-            </div>
-        </div>
-
-        <!-- Main Content -->
-        <div class="flex-1 flex flex-col overflow-hidden">
-            <!-- Top Navigation -->
-            <header class="bg-white shadow-sm">
-                <div class="px-6 py-4 flex items-center justify-between">
-                    <h2 class="text-xl font-semibold text-gray-800">Dashboard Overview</h2>
+    <div class="min-h-full">
+        <nav class="bg-indigo-600">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                <div class="flex h-16 items-center justify-between">
                     <div class="flex items-center">
-                        <span class="text-gray-600 mr-4"><?php echo htmlspecialchars($_SESSION['user']['email'] ?? ''); ?></span>
-                        <img class="h-8 w-8 rounded-full" src="https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff" alt="Profile">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-shield-alt text-white text-2xl"></i>
+                            <span class="text-white text-xl font-bold ml-2">Admin Dashboard</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span class="text-white"><?php echo htmlspecialchars($_SESSION['user']['email']); ?></span>
+                        <a href="logout.php" class="text-white hover:bg-indigo-700 px-3 py-2 rounded-md text-sm font-medium">
+                            <i class="fas fa-sign-out-alt mr-1"></i> Logout
+                        </a>
                     </div>
                 </div>
-            </header>
+            </div>
+        </nav>
 
-            <!-- Statistics Cards -->
-            <div class="p-6 bg-gray-50">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <div class="bg-white rounded-lg shadow-sm p-6">
-                        <div class="flex items-center">
-                            <div class="p-3 rounded-full bg-blue-500 bg-opacity-10">
-                                <i class="fas fa-users text-blue-500 text-xl"></i>
-                            </div>
-                            <div class="ml-4">
-                                <h3 class="text-gray-500 text-sm">Total Users</h3>
-                                <p class="text-2xl font-semibold text-gray-800"><?php echo count($users); ?></p>
-                            </div>
-                        </div>
+        <header class="bg-white shadow">
+            <div class="mx-auto max-w-7xl py-6 px-4 sm:px-6 lg:px-8">
+                <div class="md:flex md:items-center md:justify-between">
+                    <div class="min-w-0 flex-1">
+                        <h1 class="text-3xl font-bold text-gray-900">Dashboard Overview</h1>
                     </div>
-                    <div class="bg-white rounded-lg shadow-sm p-6">
-                        <div class="flex items-center">
-                            <div class="p-3 rounded-full bg-green-500 bg-opacity-10">
-                                <i class="fas fa-crown text-green-500 text-xl"></i>
-                            </div>
-                            <div class="ml-4">
-                                <h3 class="text-gray-500 text-sm">Premium Users</h3>
-                                <p class="text-2xl font-semibold text-gray-800">
-                                    <?php 
-                                    echo count(array_filter($users, function($user) {
-                                        return isset($user['user_metadata']['plan']) && $user['user_metadata']['plan'] !== 'free';
-                                    }));
-                                    ?>
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-lg shadow-sm p-6">
-                        <div class="flex items-center">
-                            <div class="p-3 rounded-full bg-purple-500 bg-opacity-10">
-                                <i class="fas fa-clock text-purple-500 text-xl"></i>
-                            </div>
-                            <div class="ml-4">
-                                <h3 class="text-gray-500 text-sm">Active Today</h3>
-                                <p class="text-2xl font-semibold text-gray-800">
-                                    <?php 
-                                    echo count(array_filter($users, function($user) {
-                                        return isset($user['last_sign_in_at']) && 
-                                               strtotime($user['last_sign_in_at']) > strtotime('-24 hours');
-                                    }));
-                                    ?>
-                                </p>
-                            </div>
-                        </div>
+                    <div class="mt-4 flex md:mt-0 md:ml-4">
+                        <button type="button" onclick="exportUsers()" class="ml-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            <i class="fas fa-download mr-2"></i> Export Users
+                        </button>
                     </div>
                 </div>
+            </div>
+        </header>
 
-                <!-- Error Messages -->
-                <?php if (isset($error)): ?>
-                    <div class="rounded-md bg-red-50 p-4 mb-6">
-                        <div class="flex">
-                            <div class="flex-shrink-0">
-                                <i class="fas fa-exclamation-circle text-red-400"></i>
-                            </div>
-                            <div class="ml-3">
-                                <h3 class="text-sm font-medium text-red-800">Error</h3>
-                                <div class="mt-2 text-sm text-red-700">
-                                    <p><?php echo htmlspecialchars($error); ?></p>
+        <main class="py-6">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                <!-- Stats Section -->
+                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-users text-indigo-600 text-3xl"></i>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Total Users</dt>
+                                        <dd class="text-lg font-bold text-gray-900"><?php echo count($users); ?></dd>
+                                    </dl>
                                 </div>
                             </div>
                         </div>
                     </div>
-                <?php endif; ?>
+                    
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-user-check text-green-600 text-3xl"></i>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Active Users</dt>
+                                        <dd class="text-lg font-bold text-gray-900">
+                                            <?php 
+                                            $activeUsers = array_filter($users, function($user) {
+                                                return isset($user['confirmed_at']);
+                                            });
+                                            echo count($activeUsers);
+                                            ?>
+                                        </dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-clock text-yellow-600 text-3xl"></i>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Pending Users</dt>
+                                        <dd class="text-lg font-bold text-gray-900">
+                                            <?php 
+                                            $pendingUsers = array_filter($users, function($user) {
+                                                return !isset($user['confirmed_at']);
+                                            });
+                                            echo count($pendingUsers);
+                                            ?>
+                                        </dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-crown text-purple-600 text-3xl"></i>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Premium Users</dt>
+                                        <dd class="text-lg font-bold text-gray-900">
+                                            <?php 
+                                            $premiumUsers = array_filter($users, function($user) {
+                                                return isset($user['user_metadata']['plan']) && $user['user_metadata']['plan'] === 'premium';
+                                            });
+                                            echo count($premiumUsers);
+                                            ?>
+                                        </dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search and Filter Section -->
+                <div class="mt-8 bg-white shadow rounded-lg p-6">
+                    <div class="flex flex-col md:flex-row gap-4">
+                        <div class="flex-1">
+                            <label for="search" class="block text-sm font-medium text-gray-700">Search Users</label>
+                            <div class="mt-1 relative rounded-md shadow-sm">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <i class="fas fa-search text-gray-400"></i>
+                                </div>
+                                <input type="text" name="search" id="search" class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md" placeholder="Search by email or name" onkeyup="filterUsers()">
+                            </div>
+                        </div>
+                        <div class="w-full md:w-48">
+                            <label for="statusFilter" class="block text-sm font-medium text-gray-700">Status</label>
+                            <select id="statusFilter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" onchange="filterUsers()">
+                                <option value="all">All Status</option>
+                                <option value="active">Active</option>
+                                <option value="pending">Pending</option>
+                            </select>
+                        </div>
+                        <div class="w-full md:w-48">
+                            <label for="planFilter" class="block text-sm font-medium text-gray-700">Plan</label>
+                            <select id="planFilter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" onchange="filterUsers()">
+                                <option value="all">All Plans</option>
+                                <option value="free">Free</option>
+                                <option value="premium">Premium</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Users Table -->
-                <div class="bg-white rounded-lg shadow-sm">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-semibold text-gray-800">User Management</h3>
-                    </div>
+                <div class="mt-8 bg-white shadow rounded-lg">
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
                                     <th scope="col" class="relative px-6 py-3">
                                         <span class="sr-only">Actions</span>
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
+                            <tbody class="bg-white divide-y divide-gray-200" id="usersTableBody">
                                 <?php foreach ($users as $user): ?>
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="flex items-center">
-                                                <img class="h-8 w-8 rounded-full" src="https://ui-avatars.com/api/?name=<?php echo urlencode($user['email']); ?>&background=0D8ABC&color=fff" alt="">
-                                                <div class="ml-4">
-                                                    <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($user['email']); ?></div>
+                                <tr class="user-row">
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="flex items-center">
+                                            <div class="flex-shrink-0 h-10 w-10">
+                                                <div class="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                                                    <span class="text-indigo-600 font-medium text-lg">
+                                                        <?php echo strtoupper(substr($user['email'], 0, 1)); ?>
+                                                    </span>
                                                 </div>
                                             </div>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo ($user['user_metadata']['plan'] ?? 'free') === 'free' ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'; ?>">
-                                                <?php echo htmlspecialchars($user['user_metadata']['plan'] ?? 'free'); ?>
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo isset($user['banned_until']) ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'; ?>">
-                                                <?php echo isset($user['banned_until']) ? 'Banned' : 'Active'; ?>
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <?php 
-                                            $lastLogin = isset($user['last_sign_in_at']) ? new DateTime($user['last_sign_in_at']) : null;
-                                            echo $lastLogin ? $lastLogin->format('Y-m-d H:i') : 'Never';
-                                            ?>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <button onclick="viewUser('<?php echo $user['id']; ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button onclick="editUser('<?php echo $user['id']; ?>')" class="text-indigo-600 hover:text-indigo-900">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
+                                            <div class="ml-4">
+                                                <div class="text-sm font-medium text-gray-900">
+                                                    <?php echo htmlspecialchars($user['email']); ?>
+                                                </div>
+                                                <div class="text-sm text-gray-500">
+                                                    ID: <?php echo substr($user['id'], 0, 8); ?>...
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo isset($user['confirmed_at']) ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'; ?>">
+                                            <?php echo isset($user['confirmed_at']) ? 'Active' : 'Pending'; ?>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php 
+                                        $plan = isset($user['user_metadata']['plan']) ? $user['user_metadata']['plan'] : 'free';
+                                        $planClass = $plan === 'premium' ? 'text-purple-600' : 'text-gray-600';
+                                        ?>
+                                        <span class="<?php echo $planClass; ?> font-medium">
+                                            <?php echo ucfirst($plan); ?>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php 
+                                        $created_at = new DateTime($user['created_at']);
+                                        echo $created_at->format('M j, Y');
+                                        ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php 
+                                        if (isset($user['last_sign_in_at'])) {
+                                            $last_login = new DateTime($user['last_sign_in_at']);
+                                            echo $last_login->format('M j, Y H:i');
+                                        } else {
+                                            echo 'Never';
+                                        }
+                                        ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button onclick="viewUser('<?php echo $user['id']; ?>')" class="text-indigo-600 hover:text-indigo-900 mr-3">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button onclick="editUser('<?php echo $user['id']; ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button onclick="confirmDeleteUser('<?php echo $user['id']; ?>')" class="text-red-600 hover:text-red-900">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
 
-    <!-- Modals -->
     <!-- View User Modal -->
     <div id="viewUserModal" class="fixed z-10 inset-0 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
         <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
@@ -374,8 +445,7 @@ try {
                                         <label for="editUserPlan" class="block text-sm font-medium text-gray-700">Plan</label>
                                         <select name="plan" id="editUserPlan" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                                             <option value="free">Free</option>
-                                            <option value="pro">Pro</option>
-                                            <option value="enterprise">Enterprise</option>
+                                            <option value="premium">Premium</option>
                                         </select>
                                     </div>
                                     <div class="mb-4">
@@ -550,6 +620,59 @@ try {
             } catch (error) {
                 console.error('Error:', error);
                 alert(error.message);
+            }
+        }
+
+        function filterUsers() {
+            const search = document.getElementById('search').value.toLowerCase();
+            const statusFilter = document.getElementById('statusFilter').value;
+            const planFilter = document.getElementById('planFilter').value;
+            const rows = document.getElementsByClassName('user-row');
+
+            Array.from(rows).forEach(row => {
+                const email = row.querySelector('td:first-child').textContent.toLowerCase();
+                const status = row.querySelector('td:nth-child(2)').textContent.trim().toLowerCase();
+                const plan = row.querySelector('td:nth-child(3)').textContent.trim().toLowerCase();
+
+                const matchesSearch = email.includes(search);
+                const matchesStatus = statusFilter === 'all' || status === statusFilter;
+                const matchesPlan = planFilter === 'all' || plan === planFilter;
+
+                row.style.display = matchesSearch && matchesStatus && matchesPlan ? '' : 'none';
+            });
+        }
+
+        async function exportUsers() {
+            const rows = Array.from(document.getElementsByClassName('user-row'))
+                .filter(row => row.style.display !== 'none');
+            
+            const csvContent = [
+                ['Email', 'Status', 'Plan', 'Joined', 'Last Login'].join(',')
+            ];
+
+            rows.forEach(row => {
+                const email = row.querySelector('td:nth-child(1)').textContent.trim();
+                const status = row.querySelector('td:nth-child(2)').textContent.trim();
+                const plan = row.querySelector('td:nth-child(3)').textContent.trim();
+                const joined = row.querySelector('td:nth-child(4)').textContent.trim();
+                const lastLogin = row.querySelector('td:nth-child(5)').textContent.trim();
+
+                csvContent.push([email, status, plan, joined, lastLogin].join(','));
+            });
+
+            const blob = new Blob([csvContent.join('\n')], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', 'users_export.csv');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function confirmDeleteUser(userId) {
+            if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+                deleteUser(userId);
             }
         }
     </script>
