@@ -1,4 +1,5 @@
 <?php
+session_start();
 require_once 'vendor/autoload.php';
 require_once 'auth/SupabaseAuth.php';
 require_once 'includes/functions.php';
@@ -6,11 +7,16 @@ require_once 'includes/functions.php';
 // Initialize Supabase client
 $supabase = new SupabaseAuth();
 
-// Check if user is logged in and is admin
-session_start();
-if (!isset($_SESSION['user']) || !$_SESSION['user']['is_admin']) {
+// Check if user is logged in
+if (!isset($_SESSION['user'])) {
     header('Location: login.php');
-    exit();
+    exit;
+}
+
+// Check if user is admin
+if (!isset($_SESSION['user']['is_admin']) || $_SESSION['user']['is_admin'] !== true) {
+    header('Location: login.php?error=unauthorized');
+    exit;
 }
 
 // Get dashboard statistics
