@@ -3,7 +3,7 @@ session_start();
 
 // Check if user is already logged in
 if (isset($_SESSION['user'])) {
-    if (isset($_SESSION['user']['is_admin']) && $_SESSION['user']['is_admin'] === true) {
+    if (isset($_SESSION['user']['role']) && $_SESSION['user']['role'] === 'admin') {
         header('Location: admin_dashboard.php');
     } else {
         header('Location: dashboard.php');

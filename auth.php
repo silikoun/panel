@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Authenticate with Supabase
         $response = $client->post('https://kgqwiwjayaydewyuygxt.supabase.co/auth/v1/token?grant_type=password', [
             'headers' => [
-                'apikey' => 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtncXdpd2pheWF5ZGV3eXV5Z3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyNDI0MTYsImV4cCI6MjA0ODgxODQxNn0._ZUb83R2usvsrSgslrV6Fk4TX1Re3d1clNuU2LPyTtI',
+                'apikey' => getenv('SUPABASE_KEY'),
                 'Content-Type' => 'application/json'
             ],
             'json' => [
@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log('Auth Response - Body: ' . json_encode($data));
 
         if ($statusCode === 200 && isset($data['access_token'])) {
-            // Hardcode admin check for specific email
+            // Check if user is admin
             $isAdmin = ($email === 'admin@wooscraper.com');
             error_log('Is admin check: ' . ($isAdmin ? 'true' : 'false'));
 
@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'email' => $data['user']['email'],
                 'access_token' => $data['access_token'],
                 'refresh_token' => $data['refresh_token'],
-                'is_admin' => $isAdmin
+                'role' => $isAdmin ? 'admin' : 'user' 
             ];
 
             error_log('Final session data: ' . json_encode($_SESSION['user']));
