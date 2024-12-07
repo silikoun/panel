@@ -79,7 +79,7 @@ class SupabaseAuth {
                     'apikey' => $this->supabaseServiceKey,
                     'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
-                    'Prefer': 'return=minimal'
+                    'Prefer' => 'return=minimal'
                 ],
                 'json' => $subscription
             ]);
