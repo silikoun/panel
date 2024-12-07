@@ -41,8 +41,8 @@ try {
         throw new Exception('SUPABASE_URL is not set in environment');
     }
     
-    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
-    if (!$supabaseKey) {
+    $supabaseServiceRoleKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
+    if (!$supabaseServiceRoleKey) {
         error_log('SUPABASE_SERVICE_ROLE_KEY is missing. Available environment variables: ' . print_r(getenv(), true));
         throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in environment');
     }
@@ -66,17 +66,17 @@ try {
     
     error_log('Successfully loaded SUPABASE_URL: ' . $supabaseUrl);
     
-    $supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
-    if (!$supabaseKey && file_exists($envFile)) {
+    $supabaseServiceRoleKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
+    if (!$supabaseServiceRoleKey && file_exists($envFile)) {
         $envContents = parse_ini_file($envFile);
-        $supabaseKey = $envContents['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
+        $supabaseServiceRoleKey = $envContents['SUPABASE_SERVICE_ROLE_KEY'] ?? null;
     }
         
-    if (!$supabaseKey) {
+    if (!$supabaseServiceRoleKey) {
         throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in any environment variable location');
     }
     
-    error_log('Successfully loaded SUPABASE_SERVICE_ROLE_KEY (length: ' . strlen($supabaseKey) . ')');
+    error_log('Successfully loaded SUPABASE_SERVICE_ROLE_KEY (length: ' . strlen($supabaseServiceRoleKey) . ')');
 
     // Debug logging
     error_log('Environment variable sources:');
@@ -85,13 +85,13 @@ try {
     if (empty($supabaseUrl)) {
         throw new Exception('SUPABASE_URL is not set in any environment variable location');
     }
-    if (empty($supabaseKey)) {
+    if (empty($supabaseServiceRoleKey)) {
         throw new Exception('SUPABASE_SERVICE_ROLE_KEY is not set in any environment variable location');
     }
 
     error_log('Successfully loaded Supabase configuration');
     error_log('Supabase URL: ' . $supabaseUrl);
-    error_log('Service Role Key length: ' . strlen($supabaseKey));
+    error_log('Service Role Key length: ' . strlen($supabaseServiceRoleKey));
 } catch (Exception $e) {
     error_log('Error loading environment: ' . $e->getMessage());
     die('Error loading environment configuration: ' . $e->getMessage());
@@ -105,9 +105,9 @@ if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION[
 
 // Load environment variables
 $supabaseUrl = getenv('SUPABASE_URL');
-$supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
+$supabaseServiceRoleKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
 
-if (!$supabaseUrl || !$supabaseKey) {
+if (!$supabaseUrl || !$supabaseServiceRoleKey) {
     die('Missing environment variables');
 }
 
@@ -116,8 +116,8 @@ $client = new GuzzleHttp\Client();
 try {
     // Fetch users from Supabase with better error handling
     $headers = [
-        'Authorization' => 'Bearer ' . $supabaseKey,
-        'apikey' => $supabaseKey,
+        'Authorization' => 'Bearer ' . $supabaseServiceRoleKey,
+        'apikey' => $supabaseServiceRoleKey,
         'Content-Type' => 'application/json',
         'Prefer' => 'return=representation'
     ];
@@ -127,12 +127,49 @@ try {
         'headers' => $headers
     ]);
 
-    $users = json_decode($authResponse->getBody(), true);
+    $authUsers = json_decode($authResponse->getBody(), true);
     
-    // Ensure users is an array
-    if (!is_array($users)) {
-        error_log('Auth users response is not an array: ' . print_r($users, true));
-        $users = [];
+    // Ensure authUsers is an array
+    if (!is_array($authUsers)) {
+        error_log('Auth users response is not an array: ' . print_r($authUsers, true));
+        $authUsers = [];
+    }
+
+    // Create a map of processed auth users
+    $users = [];
+    foreach ($authUsers as $user) {
+        if (!is_array($user)) continue;
+        
+        // Get user metadata safely
+        $metadata = [];
+        if (isset($user['user_metadata']) && is_array($user['user_metadata'])) {
+            $metadata = $user['user_metadata'];
+        }
+        
+        // Initialize user with default values
+        $processedUser = [
+            'id' => $user['id'] ?? null,
+            'email' => $user['email'] ?? null,
+            'status' => isset($user['email_confirmed_at']) ? 'Active' : 'Pending',
+            'plan' => $metadata['plan'] ?? 'Free',
+            'joined_date' => isset($user['created_at']) ? date('Y-m-d', strtotime($user['created_at'])) : 'Unknown',
+            'last_login' => isset($user['last_sign_in_at']) ? date('Y-m-d H:i:s', strtotime($user['last_sign_in_at'])) : 'Never',
+            'is_admin' => isset($metadata['is_admin']) && $metadata['is_admin'] === true,
+            'api_token' => $metadata['api_token'] ?? null,
+            'confirmed_at' => $user['email_confirmed_at'] ?? null,
+            'banned_until' => $user['banned_until'] ?? null,
+            'app_metadata' => $user['app_metadata'] ?? [],
+            'user_metadata' => $metadata
+        ];
+        
+        // Handle special statuses
+        if ($processedUser['banned_until'] !== null) {
+            $processedUser['status'] = 'Banned';
+        }
+        
+        if ($processedUser['id']) {
+            $users[$processedUser['id']] = $processedUser;
+        }
     }
 
     try {
@@ -149,50 +186,47 @@ try {
             $publicUsers = [];
         }
 
-        // Create a map of public user data
-        $publicUserMap = [];
+        // Merge additional data from public users
         foreach ($publicUsers as $publicUser) {
-            if (isset($publicUser['id'])) {
-                $publicUserMap[$publicUser['id']] = $publicUser;
+            if (!isset($publicUser['id']) || !isset($users[$publicUser['id']])) continue;
+            
+            // Update API token information if available
+            if (isset($publicUser['api_token'])) {
+                $users[$publicUser['id']]['api_token'] = $publicUser['api_token'];
+            }
+            
+            // Add any additional fields from public.users as needed
+            if (isset($publicUser['api_token_expires'])) {
+                $users[$publicUser['id']]['api_token_expires'] = $publicUser['api_token_expires'];
             }
         }
-
-        // Merge the data
-        foreach ($users as &$user) {
-            // Ensure user is an array
-            if (!is_array($user)) {
-                error_log('User data is not an array: ' . print_r($user, true));
-                continue;
-            }
-
-            // Initialize user_metadata if not set
-            if (!isset($user['user_metadata']) || !is_array($user['user_metadata'])) {
-                $user['user_metadata'] = [];
-            }
-
-            // Merge with public user data if available
-            if (isset($user['id']) && isset($publicUserMap[$user['id']])) {
-                $publicData = $publicUserMap[$user['id']];
-                if (is_array($publicData)) {
-                    $user = array_merge($user, $publicData);
-                }
-            }
-        }
-        unset($user); // Break the reference
 
     } catch (Exception $e) {
         error_log('Error fetching public users: ' . $e->getMessage());
         error_log('Error trace: ' . $e->getTraceAsString());
     }
 
-    // Log the total number of users found
-    error_log('Total users found: ' . count($users));
+    // Convert users map back to array for display
+    $users = array_values($users);
+    
+    // Calculate statistics
+    $totalUsers = count($users);
+    $activeUsers = count(array_filter($users, function($user) {
+        return $user['status'] === 'Active';
+    }));
+    $pendingUsers = count(array_filter($users, function($user) {
+        return $user['status'] === 'Pending';
+    }));
+    $premiumUsers = count(array_filter($users, function($user) {
+        return strtolower($user['plan']) !== 'free';
+    }));
 
 } catch (Exception $e) {
     error_log('Error fetching users: ' . $e->getMessage());
     error_log('Error trace: ' . $e->getTraceAsString());
     $error = 'Failed to fetch users: ' . $e->getMessage();
     $users = [];
+    $totalUsers = $activeUsers = $pendingUsers = $premiumUsers = 0;
 }
 ?>
 <!DOCTYPE html>
@@ -253,7 +287,7 @@ try {
                                 <div class="ml-5 w-0 flex-1">
                                     <dl>
                                         <dt class="text-sm font-medium text-gray-500 truncate">Total Users</dt>
-                                        <dd class="text-lg font-bold text-gray-900"><?php echo count($users); ?></dd>
+                                        <dd class="text-lg font-bold text-gray-900"><?php echo $totalUsers; ?></dd>
                                     </dl>
                                 </div>
                             </div>
@@ -269,14 +303,7 @@ try {
                                 <div class="ml-5 w-0 flex-1">
                                     <dl>
                                         <dt class="text-sm font-medium text-gray-500 truncate">Active Users</dt>
-                                        <dd class="text-lg font-bold text-gray-900">
-                                            <?php 
-                                            $activeUsers = array_filter($users, function($user) {
-                                                return isset($user['confirmed_at']);
-                                            });
-                                            echo count($activeUsers);
-                                            ?>
-                                        </dd>
+                                        <dd class="text-lg font-bold text-gray-900"><?php echo $activeUsers; ?></dd>
                                     </dl>
                                 </div>
                             </div>
@@ -292,14 +319,7 @@ try {
                                 <div class="ml-5 w-0 flex-1">
                                     <dl>
                                         <dt class="text-sm font-medium text-gray-500 truncate">Pending Users</dt>
-                                        <dd class="text-lg font-bold text-gray-900">
-                                            <?php 
-                                            $pendingUsers = array_filter($users, function($user) {
-                                                return !isset($user['confirmed_at']);
-                                            });
-                                            echo count($pendingUsers);
-                                            ?>
-                                        </dd>
+                                        <dd class="text-lg font-bold text-gray-900"><?php echo $pendingUsers; ?></dd>
                                     </dl>
                                 </div>
                             </div>
@@ -315,14 +335,7 @@ try {
                                 <div class="ml-5 w-0 flex-1">
                                     <dl>
                                         <dt class="text-sm font-medium text-gray-500 truncate">Premium Users</dt>
-                                        <dd class="text-lg font-bold text-gray-900">
-                                            <?php 
-                                            $premiumUsers = array_filter($users, function($user) {
-                                                return isset($user['user_metadata']['plan']) && $user['user_metadata']['plan'] === 'premium';
-                                            });
-                                            echo count($premiumUsers);
-                                            ?>
-                                        </dd>
+                                        <dd class="text-lg font-bold text-gray-900"><?php echo $premiumUsers; ?></dd>
                                     </dl>
                                 </div>
                             </div>
@@ -372,6 +385,7 @@ try {
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">API Token</th>
                                     <th scope="col" class="relative px-6 py-3">
                                         <span class="sr-only">Actions</span>
                                     </th>
@@ -383,114 +397,62 @@ try {
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="flex items-center">
                                             <div class="flex-shrink-0 h-10 w-10">
-                                                <div class="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                                                    <span class="text-indigo-600 font-medium text-lg">
-                                                        <?php 
-                                                        $email = $user['email'] ?? null;
-                                                        if ($email) {
-                                                            echo htmlspecialchars(strtoupper(substr($email, 0, 1)));
-                                                        } else {
-                                                            $name = $user['user_metadata']['name'] ?? null;
-                                                            if ($name) {
-                                                                echo htmlspecialchars(strtoupper(substr($name, 0, 1)));
-                                                            } else {
-                                                                echo '?';
-                                                            }
-                                                        }
-                                                        ?>
-                                                    </span>
+                                                <div class="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                                                    <span class="text-gray-500 font-medium"><?php echo strtoupper(substr($user['email'] ?? 'U', 0, 1)); ?></span>
                                                 </div>
                                             </div>
                                             <div class="ml-4">
-                                                <div class="text-sm font-medium text-gray-900">
-                                                    <?php 
-                                                    $displayName = $user['email'] ?? $user['user_metadata']['name'] ?? 'No Email';
-                                                    echo htmlspecialchars($displayName);
-                                                    ?>
-                                                </div>
-                                                <div class="text-sm text-gray-500">
-                                                    <?php
-                                                    if (isset($user['id'])) {
-                                                        echo 'ID: ' . htmlspecialchars(substr($user['id'], 0, 8)) . '...';
-                                                    } else {
-                                                        echo 'ID: N/A';
-                                                    }
-                                                    ?>
-                                                </div>
+                                                <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($user['email'] ?? 'No Email'); ?></div>
+                                                <div class="text-sm text-gray-500"><?php echo htmlspecialchars($user['id'] ?? 'No ID'); ?></div>
                                             </div>
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <?php
-                                        $status = 'Pending';
-                                        $statusClass = 'bg-yellow-100 text-yellow-800';
-                                        
-                                        if (isset($user['confirmed_at'])) {
-                                            $status = 'Active';
-                                            $statusClass = 'bg-green-100 text-green-800';
-                                        } elseif (isset($user['banned_until']) && $user['banned_until'] !== null) {
-                                            $status = 'Banned';
-                                            $statusClass = 'bg-red-100 text-red-800';
-                                        }
+                                        $status = $user['status'] ?? 'Unknown';
+                                        $statusClass = match($status) {
+                                            'Active' => 'bg-green-100 text-green-800',
+                                            'Pending' => 'bg-yellow-100 text-yellow-800',
+                                            'Banned' => 'bg-red-100 text-red-800',
+                                            default => 'bg-gray-100 text-gray-800'
+                                        };
                                         ?>
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $statusClass; ?>">
                                             <?php echo htmlspecialchars($status); ?>
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php 
-                                        $plan = 'free';
-                                        if (isset($user['user_metadata']['plan'])) {
-                                            $plan = $user['user_metadata']['plan'];
-                                        } elseif (isset($publicUserMap[$user['id']]['plan'])) {
-                                            $plan = $publicUserMap[$user['id']]['plan'];
-                                        }
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <?php
+                                        $plan = strtolower($user['plan'] ?? 'free');
                                         $planClass = $plan === 'premium' ? 'text-purple-600' : 'text-gray-600';
                                         ?>
-                                        <span class="<?php echo htmlspecialchars($planClass); ?> font-medium">
-                                            <?php echo ucfirst(htmlspecialchars($plan)); ?>
-                                        </span>
+                                        <span class="text-sm <?php echo $planClass; ?>"><?php echo ucfirst(htmlspecialchars($plan)); ?></span>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php 
-                                        if (isset($user['created_at'])) {
-                                            try {
-                                                $created_at = new DateTime($user['created_at']);
-                                                echo htmlspecialchars($created_at->format('M j, Y'));
-                                            } catch (Exception $e) {
-                                                echo 'N/A';
-                                                error_log('Error formatting created_at date: ' . $e->getMessage());
-                                            }
-                                        } else {
-                                            echo 'N/A';
-                                        }
-                                        ?>
+                                        <?php echo htmlspecialchars($user['joined_date'] ?? 'Unknown'); ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php 
-                                        if (isset($user['last_sign_in_at'])) {
-                                            try {
-                                                $last_login = new DateTime($user['last_sign_in_at']);
-                                                echo htmlspecialchars($last_login->format('M j, Y H:i'));
-                                            } catch (Exception $e) {
-                                                echo 'Never';
-                                                error_log('Error formatting last_sign_in_at date: ' . $e->getMessage());
-                                            }
-                                        } else {
-                                            echo 'Never';
-                                        }
-                                        ?>
+                                        <?php echo htmlspecialchars($user['last_login'] ?? 'Never'); ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php if (isset($user['api_token'])): ?>
+                                            <span class="font-mono"><?php echo substr($user['api_token'], 0, 8) . '...' . substr($user['api_token'], -8); ?></span>
+                                        <?php else: ?>
+                                            <span class="text-gray-400">No token</span>
+                                        <?php endif; ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <button onclick="viewUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')" class="text-indigo-600 hover:text-indigo-900 mr-3">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <button onclick="editUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                        <button onclick="confirmDeleteUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')" class="text-red-600 hover:text-red-900">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
+                                        <div class="flex space-x-3 justify-end">
+                                            <button class="text-indigo-600 hover:text-indigo-900">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button class="text-blue-600 hover:text-blue-900">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="text-red-600 hover:text-red-900">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
