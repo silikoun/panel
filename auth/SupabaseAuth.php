@@ -407,4 +407,25 @@ class SupabaseAuth {
             error_log('Failed to deactivate token: ' . $e->getMessage());
         }
     }
+
+    public function logActivity($userId, $userEmail, $action, $details = null) {
+        try {
+            $data = [
+                'user_id' => $userId,
+                'user_email' => $userEmail,
+                'action' => $action,
+                'details' => $details ? json_encode($details) : null
+            ];
+
+            $response = $this->supabase
+                ->from('activity_logs')
+                ->insert($data)
+                ->execute();
+
+            return $response->data[0] ?? null;
+        } catch (Exception $e) {
+            error_log("Error logging activity: " . $e->getMessage());
+            return null;
+        }
+    }
 }
