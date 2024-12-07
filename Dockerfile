@@ -32,17 +32,21 @@ RUN composer install --no-dev --optimize-autoloader --no-scripts
 # Copy application files
 COPY . .
 
-# Copy nginx configuration
+# Copy configuration files
 COPY nginx.conf /etc/nginx/nginx.conf
+COPY php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Create storage directory and set permissions
 RUN mkdir -p storage/logs storage/cache \
+    && mkdir -p public \
     && chown -R www-data:www-data /var/www/html \
     && find /var/www/html -type f -exec chmod 644 {} \; \
-    && find /var/www/html -type d -exec chmod 755 {} \;
+    && find /var/www/html -type d -exec chmod 755 {} \; \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose port 80
 EXPOSE 80
 
 # Start PHP-FPM and nginx
-CMD service php8.1-fpm start && nginx -g 'daemon off;'
+ENTRYPOINT ["docker-entrypoint.sh"]
