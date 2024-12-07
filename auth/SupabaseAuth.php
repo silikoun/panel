@@ -47,12 +47,135 @@ class SupabaseAuth {
             $subscriptions = json_decode($response->getBody(), true);
             
             if (empty($subscriptions)) {
-                return null;
+                // For backward compatibility, if no subscription exists, create a lifetime subscription
+                return $this->createLifetimeSubscription($userId);
             }
 
             return $subscriptions[0];
         } catch (Exception $e) {
-            throw new Exception('Error checking subscription: ' . $e->getMessage());
+            // For backward compatibility, if there's an error, assume it's a valid old client
+            error_log('Error checking subscription: ' . $e->getMessage());
+            return [
+                'status' => 'active',
+                'plan' => 'legacy',
+                'current_period_end' => date('Y-m-d H:i:s', strtotime('+999 years'))
+            ];
+        }
+    }
+
+    private function createLifetimeSubscription($userId) {
+        $client = new GuzzleHttp\Client();
+        try {
+            $subscription = [
+                'user_id' => $userId,
+                'status' => 'active',
+                'plan' => 'legacy',
+                'current_period_start' => date('Y-m-d H:i:s'),
+                'current_period_end' => date('Y-m-d H:i:s', strtotime('+999 years'))
+            ];
+
+            $response = $client->post($this->supabaseUrl . '/rest/v1/subscriptions', [
+                'headers' => [
+                    'apikey' => $this->supabaseServiceKey,
+                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
+                    'Content-Type' => 'application/json',
+                    'Prefer': 'return=minimal'
+                ],
+                'json' => $subscription
+            ]);
+
+            if ($response->getStatusCode() === 201) {
+                return $subscription;
+            }
+
+            throw new Exception('Failed to create lifetime subscription');
+        } catch (Exception $e) {
+            error_log('Error creating lifetime subscription: ' . $e->getMessage());
+            return [
+                'status' => 'active',
+                'plan' => 'legacy',
+                'current_period_end' => date('Y-m-d H:i:s', strtotime('+999 years'))
+            ];
+        }
+    }
+
+    public function verifyApiKey($apiKey) {
+        $client = new GuzzleHttp\Client();
+        try {
+            // First try to find user by new API key
+            $response = $client->get($this->supabaseUrl . '/rest/v1/users?api_token=eq.' . $apiKey, [
+                'headers' => [
+                    'apikey' => $this->supabaseServiceKey,
+                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey
+                ]
+            ]);
+
+            $users = json_decode($response->getBody(), true);
+            
+            if (empty($users)) {
+                // If not found, try to find by old token field
+                $response = $client->get($this->supabaseUrl . '/rest/v1/users?token=eq.' . $apiKey, [
+                    'headers' => [
+                        'apikey' => $this->supabaseServiceKey,
+                        'Authorization' => 'Bearer ' . $this->supabaseServiceKey
+                    ]
+                ]);
+                
+                $users = json_decode($response->getBody(), true);
+                
+                if (!empty($users)) {
+                    // Found an old token, migrate it to new system
+                    $this->migrateOldToken($users[0]['id'], $apiKey);
+                }
+            }
+            
+            if (empty($users)) {
+                return false;
+            }
+
+            $user = $users[0];
+            
+            // For old tokens or migrated tokens, create/get subscription
+            $subscription = $this->getUserSubscription($user['id']);
+            
+            if (!$subscription || $subscription['status'] !== 'active') {
+                return false;
+            }
+
+            // Update expiration if needed
+            if (isset($subscription['current_period_end']) && 
+                (!isset($user['api_token_expires']) || $subscription['current_period_end'] !== $user['api_token_expires'])) {
+                $this->updateApiKeyExpiration($user['id'], $subscription['current_period_end']);
+            }
+
+            return [
+                'user' => $user,
+                'subscription' => $subscription
+            ];
+        } catch (Exception $e) {
+            error_log('Error verifying API key: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function migrateOldToken($userId, $oldToken) {
+        try {
+            $client = new GuzzleHttp\Client();
+            $response = $client->patch($this->supabaseUrl . '/rest/v1/users?id=eq.' . $userId, [
+                'headers' => [
+                    'apikey' => $this->supabaseServiceKey,
+                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
+                    'Content-Type' => 'application/json',
+                    'Prefer' => 'return=minimal'
+                ],
+                'json' => [
+                    'api_token' => $oldToken,
+                    'api_token_expires' => date('Y-m-d H:i:s', strtotime('+999 years')),
+                    'token' => null // Clear old token field after migration
+                ]
+            ]);
+        } catch (Exception $e) {
+            error_log('Error migrating old token: ' . $e->getMessage());
         }
     }
 
@@ -101,46 +224,6 @@ class SupabaseAuth {
             throw new Exception('Failed to update API key');
         } catch (Exception $e) {
             throw new Exception('Error generating API key: ' . $e->getMessage());
-        }
-    }
-
-    public function verifyApiKey($apiKey) {
-        $client = new GuzzleHttp\Client();
-        try {
-            // Get user by API key
-            $response = $client->get($this->supabaseUrl . '/rest/v1/users?api_token=eq.' . $apiKey, [
-                'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey
-                ]
-            ]);
-
-            $users = json_decode($response->getBody(), true);
-            
-            if (empty($users)) {
-                return false;
-            }
-
-            $user = $users[0];
-            
-            // Check subscription status
-            $subscription = $this->getUserSubscription($user['id']);
-            
-            if (!$subscription || $subscription['status'] !== 'active') {
-                return false;
-            }
-
-            // Update expiration if needed
-            if ($subscription['current_period_end'] !== $user['api_token_expires']) {
-                $this->updateApiKeyExpiration($user['id'], $subscription['current_period_end']);
-            }
-
-            return [
-                'user' => $user,
-                'subscription' => $subscription
-            ];
-        } catch (Exception $e) {
-            return false;
         }
     }
 

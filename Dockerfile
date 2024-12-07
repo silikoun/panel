@@ -1,4 +1,4 @@
-FROM php:8.1-cli
+FROM php:8.1-apache
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -15,6 +15,9 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install PHP extensions
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
+
+# Enable Apache modules
+RUN a2enmod rewrite headers
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -40,17 +43,17 @@ RUN mkdir -p storage/logs storage/cache \
 # Generate optimized autoload files
 RUN composer dump-autoload --optimize
 
-# Create start script
-COPY docker/start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
+# Configure Apache
+RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
+COPY docker/000-default.conf /etc/apache2/sites-available/000-default.conf
 
 # Set environment variables
-ENV JWT_SECRET_KEY="+WQFBKMY3oH7qSqi0Vx+3kW5RA8PI/zCCTOCw8NFaELLVKNvtuxqVPadVTm5JqQIPjGbNT9FU1YT7juByrFSdg=="
-ENV SUPABASE_URL="https://kgqwiwjayaydewyuygxt.supabase.co"
-ENV SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtncXdpd2pheWF5ZGV3eXV5Z3h0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczMzI0MjQxNiwiZXhwIjoyMDQ4ODE4NDE2fQ.icrGci0zm7HppVhF5BNnXZiBwLgtj2s8am2cHOdwtho"
+ENV APACHE_DOCUMENT_ROOT=/var/www/html
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
+RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
 # Expose port
-ENV PORT=8080
+EXPOSE 80
 
-# Start script as entrypoint
-ENTRYPOINT ["/usr/local/bin/start.sh"]
+# Start Apache
+CMD ["apache2-foreground"]
