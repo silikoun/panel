@@ -68,27 +68,6 @@ if ($password !== $confirm_password) {
 
 try {
     error_log("Initializing Supabase client");
-    
-    // Test Supabase connection first
-    $testClient = new Client([
-        'base_uri' => $_ENV['SUPABASE_URL'],
-        'headers' => [
-            'apikey' => $_ENV['SUPABASE_KEY'],
-            'Content-Type' => 'application/json'
-        ],
-        'verify' => false,
-        'timeout' => 30,
-        'connect_timeout' => 30
-    ]);
-
-    error_log("Testing Supabase connection...");
-    try {
-        $testResponse = $testClient->get('/rest/v1/');
-        error_log("Supabase connection test successful");
-    } catch (Exception $e) {
-        error_log("Supabase connection test failed: " . $e->getMessage());
-        throw new Exception("Failed to connect to Supabase. Please check your credentials.");
-    }
 
     // Generate API token
     function generateApiToken($length = 32) {
@@ -97,83 +76,88 @@ try {
     
     $apiToken = generateApiToken();
     error_log("Generated API token");
-    
+
     // Set the site URL and redirect URL
-    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
-    $siteUrl = $protocol . '://' . $_SERVER['HTTP_HOST'];
+    $siteUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]";
     $redirectTo = $siteUrl . '/verify.php';
-    
+
     error_log("Site URL: " . $siteUrl);
     error_log("Redirect URL: " . $redirectTo);
 
-    // Prepare signup data
-    $signupData = [
-        'email' => $email,
-        'password' => $password,
-        'data' => [
-            'plan' => $plan,
-            'api_token' => $apiToken
+    $client = new Client([
+        'verify' => false,
+        'http_errors' => false
+    ]);
+
+    // Register user with Supabase
+    $response = $client->post($_ENV['SUPABASE_URL'] . '/auth/v1/signup', [
+        'headers' => [
+            'apikey' => $_ENV['SUPABASE_KEY'],
+            'Content-Type' => 'application/json'
         ],
-        'options' => [
+        'json' => [
+            'email' => $email,
+            'password' => $password,
             'data' => [
                 'plan' => $plan,
                 'api_token' => $apiToken
             ],
-            'emailRedirectTo' => $redirectTo
+            'email_confirm' => true,
+            'gotrue_meta_security' => [
+                'captcha_token' => null
+            ]
         ]
-    ];
-
-    error_log("Sending signup request with data: " . json_encode($signupData));
-
-    // Sign up the user
-    $signupResponse = $testClient->post('/auth/v1/signup', [
-        'json' => $signupData
     ]);
 
-    $statusCode = $signupResponse->getStatusCode();
-    $responseBody = json_decode($signupResponse->getBody()->getContents(), true);
-    
-    error_log("Signup response - Status: " . $statusCode);
-    error_log("Response body: " . json_encode($responseBody));
+    $statusCode = $response->getStatusCode();
+    $data = json_decode($response->getBody(), true);
 
-    if ($statusCode === 200 && isset($responseBody['id'])) {
+    error_log("Supabase registration response - Status: " . $statusCode);
+    error_log("Supabase registration response - Body: " . json_encode($data));
+
+    if ($statusCode === 200 || $statusCode === 201) {
+        // Insert user data into our database table
         try {
-            // Store token in local file as backup
-            $tokenData = [
-                'user_id' => $responseBody['id'],
-                'email' => $email,
-                'api_token' => $apiToken,
-                'created_at' => date('Y-m-d H:i:s')
-            ];
-            
-            $tokensFile = __DIR__ . '/tokens.json';
-            $existingTokens = [];
-            
-            if (file_exists($tokensFile)) {
-                $existingTokens = json_decode(file_get_contents($tokensFile), true) ?? [];
-            }
-            
-            // Check if user already has a token
-            $existingTokens = array_filter($existingTokens, function($item) use ($email) {
-                return isset($item['email']) && $item['email'] !== $email;
-            });
-            
-            $existingTokens[] = $tokenData;
-            file_put_contents($tokensFile, json_encode($existingTokens, JSON_PRETTY_PRINT));
-            
-            error_log("Token stored in local file");
-            
-            header('Location: signup.php?success=1&message=' . urlencode('Registration successful! Please check your email to verify your account.'));
-            exit;
+            $publicClient = new Client([
+                'verify' => false,
+                'http_errors' => false
+            ]);
+
+            $publicResponse = $publicClient->post($_ENV['SUPABASE_URL'] . '/rest/v1/users', [
+                'headers' => [
+                    'apikey' => $_ENV['SUPABASE_KEY'],
+                    'Authorization' => 'Bearer ' . $_ENV['SUPABASE_KEY'],
+                    'Content-Type' => 'application/json',
+                    'Prefer' => 'return=representation'
+                ],
+                'json' => [
+                    'id' => $data['user']['id'],
+                    'email' => $email,
+                    'plan' => $plan,
+                    'api_token' => $apiToken,
+                    'api_token_expires' => date('Y-m-d H:i:s', strtotime('+30 days'))
+                ]
+            ]);
+
+            error_log("Public user data insertion response - Status: " . $publicResponse->getStatusCode());
+            error_log("Public user data insertion response - Body: " . $publicResponse->getBody());
         } catch (Exception $e) {
-            error_log("Failed to store token locally: " . $e->getMessage());
-            header('Location: signup.php?success=1&message=' . urlencode('Registration successful! Please check your email to verify your account.'));
-            exit;
+            error_log("Error inserting public user data: " . $e->getMessage());
         }
+
+        // Redirect to success page with instructions
+        $successMessage = "Registration successful! Please check your email to verify your account. If you don't see the email, please check your spam folder.";
+        header('Location: signup.php?success=1&message=' . urlencode($successMessage));
+        exit;
+    } else {
+        $errorMessage = isset($data['error_description']) ? $data['error_description'] : 
+                      (isset($data['msg']) ? $data['msg'] : 
+                      (isset($data['error']) ? $data['error'] : 'Registration failed'));
+        
+        error_log("Registration failed: " . $errorMessage);
+        header('Location: signup.php?error=1&message=' . urlencode($errorMessage));
+        exit;
     }
-    
-    error_log("Registration failed with status code: " . $statusCode);
-    throw new Exception("Registration failed with status code: " . $statusCode);
 
 } catch (RequestException $e) {
     error_log("Registration error (RequestException): " . $e->getMessage());

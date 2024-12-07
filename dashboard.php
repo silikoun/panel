@@ -2,6 +2,7 @@
 session_start();
 require_once 'vendor/autoload.php';
 require_once 'auth/SupabaseAuth.php';
+require_once 'auth/SupabaseClient.php';
 require_once 'includes/functions.php';
 
 // Initialize Supabase client
@@ -21,25 +22,27 @@ if (!isset($_SESSION['user']['is_admin']) || $_SESSION['user']['is_admin'] !== t
 
 // Get dashboard statistics
 try {
+    $client = $supabase->createClient();
+    error_log('Client created successfully');
+
     // Get total users
-    $usersQuery = $supabase->createClient()
-        ->from('users')
+    $usersQuery = $client->from('users')
         ->select('*', ['count' => 'exact'])
         ->execute();
     $totalUsers = $usersQuery->count ?? 0;
+    error_log('Total users: ' . $totalUsers);
 
     // Get active subscriptions
-    $subscriptionsQuery = $supabase->createClient()
-        ->from('subscriptions')
+    $subscriptionsQuery = $client->from('subscriptions')
         ->select('*', ['count' => 'exact'])
         ->eq('status', 'active')
         ->execute();
     $activeSubscriptions = $subscriptionsQuery->count ?? 0;
+    error_log('Active subscriptions: ' . $activeSubscriptions);
 
     // Calculate monthly revenue
     $firstDayOfMonth = date('Y-m-01');
-    $revenueQuery = $supabase->createClient()
-        ->from('subscriptions')
+    $revenueQuery = $client->from('subscriptions')
         ->select('plan')
         ->gte('created_at', $firstDayOfMonth)
         ->eq('status', 'active')
@@ -49,35 +52,34 @@ try {
     $planPrices = [
         'basic' => 9.99,
         'pro' => 19.99,
-        'enterprise' => 49.99
+        'premium' => 29.99
     ];
-    
+
     foreach ($revenueQuery->data as $subscription) {
         $monthlyRevenue += $planPrices[strtolower($subscription->plan)] ?? 0;
     }
+    error_log('Monthly revenue: ' . $monthlyRevenue);
 
     // Get new users today
     $today = date('Y-m-d');
-    $newUsersQuery = $supabase->createClient()
-        ->from('users')
+    $newUsersQuery = $client->from('users')
         ->select('*', ['count' => 'exact'])
         ->gte('created_at', $today)
         ->execute();
     $newUsersToday = $newUsersQuery->count ?? 0;
 
     // Get recent activity logs
-    $logsQuery = $supabase->createClient()
-        ->from('activity_logs')
+    $logsQuery = $client->from('activity_logs')
         ->select('*')
         ->order('created_at', ['ascending' => false])
         ->limit(10)
         ->execute();
     $recentLogs = $logsQuery->data ?? [];
+    error_log('Recent logs fetched: ' . count($recentLogs));
 
     // Get user growth data for chart
     $sixMonthsAgo = date('Y-m-d', strtotime('-6 months'));
-    $userGrowthQuery = $supabase->createClient()
-        ->from('users')
+    $userGrowthQuery = $client->from('users')
         ->select('created_at')
         ->gte('created_at', $sixMonthsAgo)
         ->execute();

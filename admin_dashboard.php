@@ -3,6 +3,16 @@ ini_set('memory_limit', '1G');
 require 'vendor/autoload.php';
 session_start();
 
+// Check if user is logged in and is admin
+if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'admin') {
+    error_log('Access denied: User not logged in or not admin');
+    error_log('Session data: ' . print_r($_SESSION, true));
+    header('Location: login.php?error=1&message=' . urlencode('Access denied. Please log in as admin.'));
+    exit;
+}
+
+error_log('Admin access granted for user: ' . $_SESSION['user']['email']);
+
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Dotenv\Dotenv;
@@ -97,12 +107,6 @@ try {
     die('Error loading environment configuration: ' . $e->getMessage());
 }
 
-// Check if user is logged in and is admin
-if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'admin') {
-    header('Location: login.php');
-    exit;
-}
-
 // Load environment variables
 $supabaseUrl = getenv('SUPABASE_URL');
 $supabaseServiceRoleKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
@@ -118,16 +122,26 @@ try {
     $headers = [
         'Authorization' => 'Bearer ' . $supabaseServiceRoleKey,
         'apikey' => $supabaseServiceRoleKey,
-        'Content-Type' => 'application/json',
-        'Prefer' => 'return=representation'
+        'Content-Type' => 'application/json'
     ];
 
+    error_log('Fetching users from Supabase...');
+    
     // First, get users from auth.users
     $authResponse = $client->request('GET', $supabaseUrl . '/auth/v1/admin/users', [
-        'headers' => $headers
+        'headers' => $headers,
+        'verify' => false
     ]);
 
+    $statusCode = $authResponse->getStatusCode();
+    error_log('Auth API Status Code: ' . $statusCode);
+    
+    if ($statusCode !== 200) {
+        throw new Exception('Failed to fetch users. Status code: ' . $statusCode);
+    }
+
     $authUsers = json_decode($authResponse->getBody(), true);
+    error_log('Auth users response: ' . print_r($authUsers, true));
     
     // Ensure authUsers is an array
     if (!is_array($authUsers)) {
@@ -147,7 +161,6 @@ try {
         $metadata = [];
         if (isset($user['user_metadata']) && is_array($user['user_metadata'])) {
             $metadata = $user['user_metadata'];
-            error_log('User metadata for ' . ($user['email'] ?? 'unknown') . ': ' . print_r($metadata, true));
         }
         
         // Initialize user with default values
@@ -171,13 +184,14 @@ try {
         // Handle special statuses
         if ($processedUser['banned_until'] !== null) {
             $processedUser['status'] = 'Banned';
-            error_log('User ' . $processedUser['email'] . ' is banned until ' . $processedUser['banned_until']);
         }
         
         if ($processedUser['id']) {
             $users[$processedUser['id']] = $processedUser;
         }
     }
+
+    error_log('Total users processed: ' . count($users));
 
     try {
         // Then, get additional user data from public.users table
@@ -428,67 +442,47 @@ try {
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200" id="usersTableBody">
-                                <?php foreach ($users as $user): ?>
+                                <?php 
+                                error_log('Number of users to display: ' . count($users));
+                                foreach ($users as $user): 
+                                    error_log('Processing user: ' . print_r($user, true));
+                                ?>
                                 <tr class="user-row">
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="flex items-center">
-                                            <div class="flex-shrink-0">
-                                                <div class="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                                                    <span class="text-gray-500 font-medium"><?php echo strtoupper(substr($user['email'] ?? 'U', 0, 1)); ?></span>
+                                            <div class="ml-4">
+                                                <div class="text-sm font-medium text-gray-900">
+                                                    <?php echo htmlspecialchars($user['email']); ?>
                                                 </div>
                                             </div>
-                                            <div class="ml-4">
-                                                <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($user['email'] ?? 'No Email'); ?></div>
-                                                <div class="text-sm text-gray-500"><?php echo htmlspecialchars($user['id'] ?? 'No ID'); ?></div>
-                                            </div>
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <?php
-                                        $status = $user['status'] ?? 'Unknown';
-                                        $statusClass = match($status) {
-                                            'Active' => 'bg-green-100 text-green-800',
-                                            'Pending' => 'bg-yellow-100 text-yellow-800',
-                                            'Banned' => 'bg-red-100 text-red-800',
-                                            default => 'bg-gray-100 text-gray-800'
-                                        };
-                                        ?>
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $statusClass; ?>">
-                                            <?php echo htmlspecialchars($status); ?>
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $user['status'] === 'Active' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'; ?>">
+                                            <?php echo htmlspecialchars($user['status']); ?>
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <?php
-                                        $plan = strtolower($user['plan'] ?? 'free');
-                                        $planClass = $plan === 'premium' ? 'text-purple-600' : 'text-gray-600';
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php echo htmlspecialchars($user['plan']); ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php echo htmlspecialchars($user['joined_date']); ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php echo htmlspecialchars($user['last_login']); ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php 
+                                        if ($user['api_token']) {
+                                            echo substr(htmlspecialchars($user['api_token']), 0, 8) . '...';
+                                        } else {
+                                            echo 'Not set';
+                                        }
                                         ?>
-                                        <span class="text-sm <?php echo $planClass; ?>"><?php echo ucfirst(htmlspecialchars($plan)); ?></span>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php echo htmlspecialchars($user['joined_date'] ?? 'Unknown'); ?>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php echo htmlspecialchars($user['last_login'] ?? 'Never'); ?>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php if (isset($user['api_token'])): ?>
-                                            <span class="font-mono"><?php echo substr($user['api_token'], 0, 8) . '...' . substr($user['api_token'], -8); ?></span>
-                                        <?php else: ?>
-                                            <span class="text-gray-400">No token</span>
-                                        <?php endif; ?>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <div class="flex space-x-3 justify-end">
-                                            <button class="text-indigo-600 hover:text-indigo-900">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button class="text-blue-600 hover:text-blue-900">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                            <button class="text-red-600 hover:text-red-900">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </div>
+                                        <button onclick="viewUser('<?php echo $user['id']; ?>')" class="text-indigo-600 hover:text-indigo-900 mr-2">View</button>
+                                        <button onclick="editUser('<?php echo $user['id']; ?>')" class="text-indigo-600 hover:text-indigo-900">Edit</button>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
