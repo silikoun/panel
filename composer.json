@@ -1,13 +1,13 @@
 {
     "require": {
-        "php": "^7.4|^8.0",
-        "guzzlehttp/guzzle": "^7.8",
+        "php": "^8.1",
+        "guzzlehttp/guzzle": "7.5.0",
         "firebase/php-jwt": "^6.9",
         "supabase/supabase-php": "^0.0.3"
     },
     "config": {
         "platform": {
-            "php": "8.0"
+            "php": "8.1"
         },
         "process-timeout": 0,
         "allow-plugins": {
