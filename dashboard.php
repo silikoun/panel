@@ -51,8 +51,24 @@ if (!$isAuthenticated) {
 
 // Get user's current token
 $currentToken = '';
-if (isset($_SESSION['user']['user']['user_metadata']['api_token'])) {
-    $currentToken = $_SESSION['user']['user']['user_metadata']['api_token'];
+if (isset($_SESSION['user']['api_token'])) {
+    $currentToken = $_SESSION['user']['api_token'];
+} else {
+    // Try to get token from tokens.json as fallback
+    $tokensFile = __DIR__ . '/tokens.json';
+    if (file_exists($tokensFile)) {
+        $tokens = json_decode(file_get_contents($tokensFile), true) ?? [];
+        $userEmail = $_SESSION['user']['email'] ?? '';
+        
+        foreach ($tokens as $token) {
+            if ($token['email'] === $userEmail) {
+                $currentToken = $token['api_token'];
+                // Update session with the token
+                $_SESSION['user']['api_token'] = $currentToken;
+                break;
+            }
+        }
+    }
 }
 
 // Validate environment variables
@@ -83,7 +99,6 @@ if (empty($_ENV['SUPABASE_KEY'])) {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
