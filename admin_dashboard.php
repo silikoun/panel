@@ -128,37 +128,62 @@ try {
     ]);
 
     $users = json_decode($authResponse->getBody(), true);
-
-    // Then, get additional user data from public.users table
-    $publicUsersResponse = $client->request('GET', $supabaseUrl . '/rest/v1/users', [
-        'headers' => $headers
-    ]);
-
-    $publicUsers = json_decode($publicUsersResponse->getBody(), true);
-
-    // Create a map of public user data
-    $publicUserMap = [];
-    foreach ($publicUsers as $publicUser) {
-        if (isset($publicUser['id'])) {
-            $publicUserMap[$publicUser['id']] = $publicUser;
-        }
+    
+    // Ensure users is an array
+    if (!is_array($users)) {
+        error_log('Auth users response is not an array: ' . print_r($users, true));
+        $users = [];
     }
 
-    // Merge the data
-    foreach ($users as &$user) {
-        if (isset($user['id']) && isset($publicUserMap[$user['id']])) {
-            $user = array_merge($user, $publicUserMap[$user['id']]);
-        }
+    try {
+        // Then, get additional user data from public.users table
+        $publicUsersResponse = $client->request('GET', $supabaseUrl . '/rest/v1/users', [
+            'headers' => $headers
+        ]);
+
+        $publicUsers = json_decode($publicUsersResponse->getBody(), true);
         
-        // Ensure user_metadata exists
-        if (!isset($user['user_metadata'])) {
-            $user['user_metadata'] = [];
+        // Ensure publicUsers is an array
+        if (!is_array($publicUsers)) {
+            error_log('Public users response is not an array: ' . print_r($publicUsers, true));
+            $publicUsers = [];
         }
-        
-        // Log the user data for debugging
-        error_log('User data: ' . print_r($user, true));
+
+        // Create a map of public user data
+        $publicUserMap = [];
+        foreach ($publicUsers as $publicUser) {
+            if (isset($publicUser['id'])) {
+                $publicUserMap[$publicUser['id']] = $publicUser;
+            }
+        }
+
+        // Merge the data
+        foreach ($users as &$user) {
+            // Ensure user is an array
+            if (!is_array($user)) {
+                error_log('User data is not an array: ' . print_r($user, true));
+                continue;
+            }
+
+            // Initialize user_metadata if not set
+            if (!isset($user['user_metadata']) || !is_array($user['user_metadata'])) {
+                $user['user_metadata'] = [];
+            }
+
+            // Merge with public user data if available
+            if (isset($user['id']) && isset($publicUserMap[$user['id']])) {
+                $publicData = $publicUserMap[$user['id']];
+                if (is_array($publicData)) {
+                    $user = array_merge($user, $publicData);
+                }
+            }
+        }
+        unset($user); // Break the reference
+
+    } catch (Exception $e) {
+        error_log('Error fetching public users: ' . $e->getMessage());
+        error_log('Error trace: ' . $e->getTraceAsString());
     }
-    unset($user); // Break the reference
 
     // Log the total number of users found
     error_log('Total users found: ' . count($users));
