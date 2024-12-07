@@ -98,320 +98,132 @@ try {
 }
 
 // Check if user is logged in and is admin
-if (!isset($_SESSION['user']) || !isset($_SESSION['user']['is_admin']) || $_SESSION['user']['is_admin'] !== true) {
-    error_log('Admin access denied. Session data: ' . json_encode($_SESSION));
+if (!isset($_SESSION['user']) || !isset($_SESSION['user']['role']) || $_SESSION['user']['role'] !== 'admin') {
     header('Location: login.php');
     exit;
 }
 
-// Initialize Supabase client
+// Load environment variables
+$supabaseUrl = getenv('SUPABASE_URL');
+$supabaseKey = getenv('SUPABASE_SERVICE_ROLE_KEY');
+
+if (!$supabaseUrl || !$supabaseKey) {
+    die('Missing environment variables');
+}
+
+$client = new GuzzleHttp\Client();
+
 try {
-    // Get project reference from URL
-    $urlParts = parse_url($supabaseUrl);
-    $projectRef = explode('.', $urlParts['host'])[0];
-    error_log("Project reference: " . $projectRef);
-
-    // Create client for auth admin API
-    $client = new Client([
-        'verify' => false,
-        'http_errors' => false
-    ]);
-
-    error_log("Making request to Auth Admin API");
-    error_log("Using service role key: " . substr($supabaseKey, 0, 10) . '...');
-    
-    // Use the Auth API endpoint with full URL
-    $authUrl = "https://{$projectRef}.supabase.co/auth/v1/admin/users";
-    error_log("Full auth URL: " . $authUrl);
-    
-    $response = $client->get($authUrl, [
+    // Fetch users from Supabase
+    $response = $client->request('GET', $supabaseUrl . '/auth/v1/admin/users', [
         'headers' => [
-            'apikey' => $supabaseKey,
             'Authorization' => 'Bearer ' . $supabaseKey,
-            'Content-Type' => 'application/json'
+            'apikey' => $supabaseKey
         ]
     ]);
 
-    $statusCode = $response->getStatusCode();
-    $responseBody = (string) $response->getBody();
-    error_log("Response status: " . $statusCode);
-    error_log("Response body: " . $responseBody);
-
-    if ($statusCode === 401) {
-        error_log("Authentication failed. Response: " . $responseBody);
-        throw new Exception("Authentication failed. Please check your service role key.");
-    }
-
-    if ($statusCode !== 200) {
-        error_log("Error response: " . $responseBody);
-        throw new Exception("Failed to fetch users. Status code: " . $statusCode);
-    }
-
-    $responseData = json_decode($responseBody, true);
-    if (!is_array($responseData) || !isset($responseData['users'])) {
-        error_log("Invalid response format: " . gettype($responseData));
-        throw new Exception('Invalid response format: expected array with users key');
-    }
-
-    error_log("Number of users fetched: " . count($responseData['users']));
-    
-    // Filter out any non-array items and initialize default values
-    $users = [];
-    foreach ($responseData['users'] as $user) {
-        if (!is_array($user)) {
-            error_log("Invalid user data format: " . gettype($user));
-            continue;
-        }
-
-        error_log("Processing user: " . json_encode($user));
-
-        // Ensure app_metadata and user_metadata are arrays
-        if (!isset($user['app_metadata']) || !is_array($user['app_metadata'])) {
-            $user['app_metadata'] = [];
-        }
-        if (!isset($user['user_metadata']) || !is_array($user['user_metadata'])) {
-            $user['user_metadata'] = [];
-        }
-
-        // Set default values
-        $user['user_metadata']['plan'] = $user['user_metadata']['plan'] ?? 'free';
-        
-        // Get user status with null coalescing for banned and confirmed flags
-        $isBanned = ($user['banned'] ?? false) === true;
-        $isConfirmed = ($user['confirmed'] ?? false) === true;
-        $user['status'] = $isBanned ? 'BANNED' : ($isConfirmed ? 'ACTIVE' : 'PENDING');
-        
-        $users[] = $user;
-        
-        error_log("Added user with email: " . ($user['email'] ?? 'No Email') . " and status: " . $user['status']);
-    }
-    
-    error_log("Successfully processed " . count($users) . " users");
-    
-    // Fetch tokens from local storage
-    $tokensFile = __DIR__ . '/tokens.json';
-    $tokens = [];
-    
-    if (file_exists($tokensFile)) {
-        $tokensData = json_decode(file_get_contents($tokensFile), true);
-        if (is_array($tokensData)) {
-            $tokens = $tokensData;
-            error_log("Loaded " . count($tokens) . " tokens from local storage");
-        } else {
-            error_log("Invalid tokens data format in file");
-        }
-    }
-
-    // Calculate statistics
-    $stats = [
-        'total_users' => count($users),
-        'active_tokens' => count(array_filter($tokens, function($t) {
-            return is_array($t) && isset($t['status']) && $t['status'] === 'active';
-        })),
-        'active_subscriptions' => count(array_filter($users, function($u) {
-            return is_array($u) && 
-                   isset($u['user_metadata']['plan']) && 
-                   $u['user_metadata']['plan'] !== 'free';
-        })),
-        'new_users_today' => count(array_filter($users, function($u) {
-            return is_array($u) && 
-                   isset($u['created_at']) && 
-                   date('Y-m-d', strtotime($u['created_at'])) === date('Y-m-d');
-        }))
-    ];
-    
-    error_log("Statistics calculated: " . json_encode($stats));
-
+    $users = json_decode($response->getBody(), true);
 } catch (Exception $e) {
-    error_log("Error in admin dashboard: " . $e->getMessage());
-    error_log("Stack trace: " . $e->getTraceAsString());
-    $error = "Error fetching data: " . $e->getMessage();
+    $error = 'Failed to fetch users: ' . $e->getMessage();
     $users = [];
-    $tokens = [];
-    $stats = [
-        'total_users' => 0,
-        'active_tokens' => 0,
-        'active_subscriptions' => 0,
-        'new_users_today' => 0
-    ];
 }
-
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - WooCommerce Product Scraper</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <title>Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
-    <nav class="bg-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="flex justify-between h-16">
-                <div class="flex">
-                    <div class="flex-shrink-0 flex items-center">
-                        <a href="index.php" class="text-xl font-bold text-gray-800">WooScraper Admin</a>
+    <div class="min-h-full">
+        <nav class="bg-gray-800">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                <div class="flex h-16 items-center justify-between">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <span class="text-white">Admin Dashboard</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <a href="logout.php" class="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Logout</a>
                     </div>
                 </div>
-                <div class="flex items-center">
-                    <a href="logout.php" class="text-gray-600 hover:text-gray-900">Logout</a>
-                </div>
             </div>
-        </div>
-    </nav>
+        </nav>
 
-    <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <?php if (isset($error)): ?>
-            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-                <strong class="font-bold">Error!</strong>
-                <span class="block sm:inline"><?php echo htmlspecialchars($error); ?></span>
+        <header class="bg-white shadow">
+            <div class="mx-auto max-w-7xl py-6 px-4 sm:px-6 lg:px-8">
+                <h1 class="text-3xl font-bold tracking-tight text-gray-900">Users</h1>
             </div>
-        <?php endif; ?>
+        </header>
 
-        <!-- Statistics Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-indigo-100 text-indigo-500">
-                        <i class="fas fa-users fa-2x"></i>
+        <main>
+            <div class="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8">
+                <?php if (isset($error)): ?>
+                    <div class="rounded-md bg-red-50 p-4 mb-4">
+                        <div class="flex">
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800">Error</h3>
+                                <div class="mt-2 text-sm text-red-700">
+                                    <p><?php echo htmlspecialchars($error); ?></p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="ml-4">
-                        <p class="text-sm text-gray-500">Total Users</p>
-                        <p class="text-2xl font-semibold"><?php echo $stats['total_users']; ?></p>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-green-100 text-green-500">
-                        <i class="fas fa-key fa-2x"></i>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm text-gray-500">Active Tokens</p>
-                        <p class="text-2xl font-semibold"><?php echo $stats['active_tokens']; ?></p>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-blue-100 text-blue-500">
-                        <i class="fas fa-crown fa-2x"></i>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm text-gray-500">Active Subscriptions</p>
-                        <p class="text-2xl font-semibold"><?php echo $stats['active_subscriptions']; ?></p>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-yellow-100 text-yellow-500">
-                        <i class="fas fa-user-plus fa-2x"></i>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm text-gray-500">New Users Today</p>
-                        <p class="text-2xl font-semibold"><?php echo $stats['new_users_today']; ?></p>
-                    </div>
-                </div>
-            </div>
-        </div>
+                <?php endif; ?>
 
-        <!-- Users Table -->
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
-                <h3 class="text-lg leading-6 font-medium text-gray-900">
-                    Registered Users
-                </h3>
+                <div class="px-4 sm:px-6 lg:px-8">
+                    <div class="mt-8 flow-root">
+                        <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+                            <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+                                <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+                                    <table class="min-w-full divide-y divide-gray-300">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Email</th>
+                                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Plan</th>
+                                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+                                                <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                                                    <span class="sr-only">Actions</span>
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-200 bg-white">
+                                            <?php foreach ($users as $user): ?>
+                                                <tr>
+                                                    <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                                                        <?php echo htmlspecialchars($user['email'] ?? ''); ?>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                        <?php echo htmlspecialchars($user['user_metadata']['plan'] ?? 'free'); ?>
+                                                    </td>
+                                                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                        <?php echo htmlspecialchars($user['status'] ?? 'ACTIVE'); ?>
+                                                    </td>
+                                                    <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                                                        <a href="#" class="text-indigo-600 hover:text-indigo-900 mr-4" 
+                                                           onclick="viewUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
+                                                            View
+                                                        </a>
+                                                        <a href="#" class="text-indigo-600 hover:text-indigo-900" 
+                                                           onclick="editUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
+                                                            Edit
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subscription</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        <?php foreach ($users as $user): ?>
-                            <?php
-                            // Get tokens for this user
-                            $userTokens = array_filter($tokens, function($t) use ($user) {
-                                return is_array($t) && 
-                                       isset($t['email']) && 
-                                       isset($user['email']) && 
-                                       $t['email'] === $user['email'];
-                            });
-                             
-                            $activeTokens = array_filter($userTokens, function($t) {
-                                return is_array($t) && 
-                                       isset($t['status']) && 
-                                       $t['status'] === 'active';
-                            });
-                            ?>
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="flex items-center">
-                                        <div class="ml-4">
-                                            <div class="text-sm font-medium text-gray-900">
-                                                <?php echo htmlspecialchars($user['email'] ?? 'No Email'); ?>
-                                            </div>
-                                            <div class="text-sm text-gray-500">
-                                                Joined: <?php 
-                                                    $joinDate = isset($user['created_at']) ? date('Y-m-d', strtotime($user['created_at'])) : 'Unknown';
-                                                    echo htmlspecialchars($joinDate);
-                                                ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900">
-                                        <?php 
-                                            $plan = isset($user['user_metadata']['plan']) ? ucfirst($user['user_metadata']['plan']) : 'Free';
-                                            echo htmlspecialchars($plan);
-                                        ?>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900">
-                                        Active: <?php echo count($activeTokens); ?>
-                                    </div>
-                                    <div class="text-sm text-gray-500">Total: <?php echo count($userTokens); ?></div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php 
-                                        $statusClass = match($user['status']) {
-                                            'ACTIVE' => 'bg-green-100 text-green-800',
-                                            'BANNED' => 'bg-red-100 text-red-800',
-                                            'PENDING' => 'bg-yellow-100 text-yellow-800',
-                                            default => 'bg-gray-100 text-gray-800'
-                                        };
-                                        echo $statusClass;
-                                    ?>">
-                                        <?php echo htmlspecialchars($user['status']); ?>
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <a href="#" class="text-indigo-600 hover:text-indigo-900" 
-                                       onclick="viewUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
-                                        View
-                                    </a>
-                                    <a href="#" class="text-indigo-600 hover:text-indigo-900" 
-                                       onclick="editUser('<?php echo htmlspecialchars($user['id'] ?? ''); ?>')">
-                                        Edit
-                                    </a>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        </main>
     </div>
 
     <!-- View User Modal -->
@@ -512,80 +324,74 @@ try {
     </div>
 
     <script>
-        function showViewModal() {
-            document.getElementById('viewUserModal').classList.remove('hidden');
-        }
-
-        function closeViewModal() {
-            document.getElementById('viewUserModal').classList.add('hidden');
-        }
-
         async function viewUser(userId) {
             try {
-                // Get user data
                 const response = await fetch(`update_user.php?action=get&userId=${userId}`, {
                     method: 'GET',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     }
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to fetch user data');
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to fetch user data');
                 }
 
                 const userData = await response.json();
                 
                 // Populate modal with user data
-                document.getElementById('viewUserEmail').textContent = userData.email;
+                document.getElementById('viewUserEmail').textContent = userData.email || '';
                 document.getElementById('viewUserPlan').textContent = userData.user_metadata?.plan || 'free';
-                document.getElementById('viewUserStatus').textContent = userData.status;
+                document.getElementById('viewUserStatus').textContent = userData.status || 'ACTIVE';
 
                 // Show modal
-                showViewModal();
+                document.getElementById('viewUserModal').classList.remove('hidden');
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error loading user data');
+                alert(error.message);
             }
-        }
-
-        function showEditModal() {
-            document.getElementById('editUserModal').classList.remove('hidden');
-        }
-
-        function closeEditModal() {
-            document.getElementById('editUserModal').classList.add('hidden');
         }
 
         async function editUser(userId) {
             try {
-                // Get user data
                 const response = await fetch(`update_user.php?action=get&userId=${userId}`, {
                     method: 'GET',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     }
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to fetch user data');
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to fetch user data');
                 }
 
                 const userData = await response.json();
                 
                 // Populate modal with user data
                 document.getElementById('editUserId').value = userId;
-                document.getElementById('editUserEmail').value = userData.email;
+                document.getElementById('editUserEmail').value = userData.email || '';
                 document.getElementById('editUserPlan').value = userData.user_metadata?.plan || 'free';
-                document.getElementById('editUserStatus').value = userData.status;
+                document.getElementById('editUserStatus').value = userData.status || 'ACTIVE';
                 document.getElementById('editUserPassword').value = '';
 
                 // Show modal
-                showEditModal();
+                document.getElementById('editUserModal').classList.remove('hidden');
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error loading user data');
+                alert(error.message);
             }
+        }
+
+        function closeViewModal() {
+            document.getElementById('viewUserModal').classList.add('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editUserModal').classList.add('hidden');
         }
 
         async function saveUserChanges() {
@@ -599,7 +405,8 @@ try {
                 const response = await fetch('update_user.php', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
                     body: JSON.stringify({
                         action: 'update',
@@ -612,7 +419,8 @@ try {
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to update user');
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to update user');
                 }
 
                 // Close modal and reload page
@@ -620,7 +428,7 @@ try {
                 location.reload();
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error updating user');
+                alert(error.message);
             }
         }
 
@@ -635,7 +443,8 @@ try {
                 const response = await fetch('update_user.php', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
                     body: JSON.stringify({
                         action: 'delete',
@@ -644,7 +453,8 @@ try {
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to delete user');
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to delete user');
                 }
 
                 // Close modal and reload page
@@ -652,7 +462,7 @@ try {
                 location.reload();
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error deleting user');
+                alert(error.message);
             }
         }
     </script>
