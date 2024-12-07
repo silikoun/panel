@@ -138,12 +138,16 @@ try {
     // Create a map of processed auth users
     $users = [];
     foreach ($authUsers as $user) {
-        if (!is_array($user)) continue;
+        if (!is_array($user)) {
+            error_log('Invalid user data: ' . print_r($user, true));
+            continue;
+        }
         
         // Get user metadata safely
         $metadata = [];
         if (isset($user['user_metadata']) && is_array($user['user_metadata'])) {
             $metadata = $user['user_metadata'];
+            error_log('User metadata for ' . ($user['email'] ?? 'unknown') . ': ' . print_r($metadata, true));
         }
         
         // Initialize user with default values
@@ -162,9 +166,12 @@ try {
             'user_metadata' => $metadata
         ];
         
+        error_log('Processed user: ' . print_r($processedUser, true));
+        
         // Handle special statuses
         if ($processedUser['banned_until'] !== null) {
             $processedUser['status'] = 'Banned';
+            error_log('User ' . $processedUser['email'] . ' is banned until ' . $processedUser['banned_until']);
         }
         
         if ($processedUser['id']) {
@@ -209,17 +216,26 @@ try {
     // Convert users map back to array for display
     $users = array_values($users);
     
-    // Calculate statistics
+    // Calculate statistics with debug logging
     $totalUsers = count($users);
+    error_log("Total Users: " . $totalUsers);
+    
     $activeUsers = count(array_filter($users, function($user) {
         return $user['status'] === 'Active';
     }));
+    error_log("Active Users: " . $activeUsers);
+    
     $pendingUsers = count(array_filter($users, function($user) {
         return $user['status'] === 'Pending';
     }));
+    error_log("Pending Users: " . $pendingUsers);
+    
     $premiumUsers = count(array_filter($users, function($user) {
-        return strtolower($user['plan']) !== 'free';
+        $isPremium = strtolower($user['plan']) === 'premium';
+        error_log("User {$user['email']} plan: {$user['plan']} isPremium: " . ($isPremium ? 'true' : 'false'));
+        return $isPremium;
     }));
+    error_log("Premium Users: " . $premiumUsers);
 
 } catch (Exception $e) {
     error_log('Error fetching users: ' . $e->getMessage());
@@ -287,7 +303,12 @@ try {
                                 <div class="ml-5 w-0 flex-1">
                                     <dl>
                                         <dt class="text-sm font-medium text-gray-500 truncate">Total Users</dt>
-                                        <dd class="text-lg font-bold text-gray-900"><?php echo $totalUsers; ?></dd>
+                                        <dd class="text-lg font-semibold text-gray-900">
+                                            <?php 
+                                            echo number_format($totalUsers); 
+                                            error_log("Frontend Total Users: " . $totalUsers);
+                                            ?>
+                                        </dd>
                                     </dl>
                                 </div>
                             </div>
@@ -303,7 +324,12 @@ try {
                                 <div class="ml-5 w-0 flex-1">
                                     <dl>
                                         <dt class="text-sm font-medium text-gray-500 truncate">Active Users</dt>
-                                        <dd class="text-lg font-bold text-gray-900"><?php echo $activeUsers; ?></dd>
+                                        <dd class="text-lg font-semibold text-gray-900">
+                                            <?php 
+                                            echo number_format($activeUsers); 
+                                            error_log("Frontend Active Users: " . $activeUsers);
+                                            ?>
+                                        </dd>
                                     </dl>
                                 </div>
                             </div>
@@ -319,7 +345,12 @@ try {
                                 <div class="ml-5 w-0 flex-1">
                                     <dl>
                                         <dt class="text-sm font-medium text-gray-500 truncate">Pending Users</dt>
-                                        <dd class="text-lg font-bold text-gray-900"><?php echo $pendingUsers; ?></dd>
+                                        <dd class="text-lg font-semibold text-gray-900">
+                                            <?php 
+                                            echo number_format($pendingUsers); 
+                                            error_log("Frontend Pending Users: " . $pendingUsers);
+                                            ?>
+                                        </dd>
                                     </dl>
                                 </div>
                             </div>
@@ -335,7 +366,12 @@ try {
                                 <div class="ml-5 w-0 flex-1">
                                     <dl>
                                         <dt class="text-sm font-medium text-gray-500 truncate">Premium Users</dt>
-                                        <dd class="text-lg font-bold text-gray-900"><?php echo $premiumUsers; ?></dd>
+                                        <dd class="text-lg font-semibold text-gray-900">
+                                            <?php 
+                                            echo number_format($premiumUsers); 
+                                            error_log("Frontend Premium Users: " . $premiumUsers);
+                                            ?>
+                                        </dd>
                                     </dl>
                                 </div>
                             </div>
@@ -396,7 +432,7 @@ try {
                                 <tr class="user-row">
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="flex items-center">
-                                            <div class="flex-shrink-0 h-10 w-10">
+                                            <div class="flex-shrink-0">
                                                 <div class="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
                                                     <span class="text-gray-500 font-medium"><?php echo strtoupper(substr($user['email'] ?? 'U', 0, 1)); ?></span>
                                                 </div>
