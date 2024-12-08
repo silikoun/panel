@@ -1,11 +1,13 @@
--- Add role column to auth.users if it doesn't exist
+-- Drop role column if it exists
 ALTER TABLE auth.users 
-ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user';
+DROP COLUMN IF EXISTS role;
 
 -- Update existing admin users
 UPDATE auth.users 
-SET role = 'admin' 
-WHERE is_admin = true;
+SET is_admin = true 
+WHERE is_admin = false AND id IN (
+    SELECT id FROM auth.users WHERE is_admin = true
+);
 
 -- Create activity_logs table if it doesn't exist
 CREATE TABLE IF NOT EXISTS public.activity_logs (
@@ -31,7 +33,7 @@ CREATE POLICY "Admins can view all logs"
         EXISTS (
             SELECT 1 FROM auth.users
             WHERE auth.users.id = auth.uid()
-            AND role = 'admin'
+            AND is_admin = true
         )
     );
 
@@ -45,7 +47,7 @@ CREATE POLICY "Admins can insert any logs"
         EXISTS (
             SELECT 1 FROM auth.users
             WHERE auth.users.id = auth.uid()
-            AND role = 'admin'
+            AND is_admin = true
         )
     );
 
@@ -57,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON public.activity_logs(
 GRANT ALL ON public.activity_logs TO service_role;
 GRANT SELECT, INSERT ON public.activity_logs TO authenticated;
 
--- Update subscription policies to use role instead of is_admin
+-- Update subscription policies to use is_admin instead of role
 DROP POLICY IF EXISTS "Admins can view all subscriptions" ON public.subscriptions;
 DROP POLICY IF EXISTS "Admins can insert subscriptions" ON public.subscriptions;
 DROP POLICY IF EXISTS "Admins can update subscriptions" ON public.subscriptions;
@@ -68,7 +70,7 @@ CREATE POLICY "Admins can view all subscriptions"
         EXISTS (
             SELECT 1 FROM auth.users
             WHERE auth.users.id = auth.uid()
-            AND role = 'admin'
+            AND is_admin = true
         )
     );
 
@@ -78,7 +80,7 @@ CREATE POLICY "Admins can insert subscriptions"
         EXISTS (
             SELECT 1 FROM auth.users
             WHERE auth.users.id = auth.uid()
-            AND role = 'admin'
+            AND is_admin = true
         )
     );
 
@@ -88,6 +90,6 @@ CREATE POLICY "Admins can update subscriptions"
         EXISTS (
             SELECT 1 FROM auth.users
             WHERE auth.users.id = auth.uid()
-            AND role = 'admin'
+            AND is_admin = true
         )
     );

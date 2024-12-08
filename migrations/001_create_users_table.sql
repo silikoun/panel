@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
-    role VARCHAR(50) DEFAULT 'user',
+    is_admin BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -22,7 +22,7 @@ CREATE TRIGGER update_users_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Insert default admin user if not exists
-INSERT INTO users (email, role)
-VALUES ('admin@wooscraper.com', 'admin')
+INSERT INTO users (email, is_admin)
+VALUES ('admin@wooscraper.com', TRUE)
 ON CONFLICT (email) DO UPDATE
-SET role = 'admin';
+SET is_admin = TRUE;

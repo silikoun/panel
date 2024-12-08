@@ -1,38 +1,68 @@
 <?php
-require 'vendor/autoload.php';
-require_once 'auth/SupabaseAuth.php';
+require_once __DIR__ . '/vendor/autoload.php';
 
-// Enable error reporting
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Load environment variables
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
+// Function to run SQL file on Railway MySQL
+function runRailwayMigration($pdo, $file) {
+    try {
+        $sql = file_get_contents($file);
+        $pdo->exec($sql);
+        echo "Successfully executed Railway migration: " . basename($file) . "\n";
+    } catch (PDOException $e) {
+        echo "Error executing Railway migration " . basename($file) . ": " . $e->getMessage() . "\n";
+    }
+}
+
+// Function to run SQL file on Supabase
+function runSupabaseMigration($file) {
+    try {
+        $client = new GuzzleHttp\Client();
+        $sql = file_get_contents($file);
+        
+        $response = $client->post(getenv('SUPABASE_URL') . '/rest/v1/rpc/migrate', [
+            'headers' => [
+                'apikey' => getenv('SUPABASE_SERVICE_ROLE_KEY'),
+                'Authorization' => 'Bearer ' . getenv('SUPABASE_SERVICE_ROLE_KEY'),
+                'Content-Type' => 'application/json'
+            ],
+            'json' => [
+                'sql' => $sql
+            ]
+        ]);
+        
+        echo "Successfully executed Supabase migration: " . basename($file) . "\n";
+    } catch (Exception $e) {
+        echo "Error executing Supabase migration " . basename($file) . ": " . $e->getMessage() . "\n";
+    }
+}
 
 try {
-    // Initialize Supabase client
-    $supabase = new SupabaseAuth();
-    $client = $supabase->createClient();
+    // Connect to Railway MySQL
+    $pdo = new PDO(
+        "mysql:host=" . getenv('MYSQLHOST') . ";dbname=" . getenv('MYSQLDATABASE'),
+        getenv('MYSQLUSER'),
+        getenv('MYSQLPASSWORD')
+    );
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
     // Get all migration files
     $migrations = glob(__DIR__ . '/migrations/*.sql');
-    sort($migrations); // Sort to ensure order
+    sort($migrations); // Execute in order
     
     foreach ($migrations as $migration) {
-        echo "Running migration: " . basename($migration) . "\n";
-        
-        // Read SQL file
-        $sql = file_get_contents($migration);
-        
-        // Execute migration
-        $result = $client->rpc('exec_sql', ['sql' => $sql])->execute();
-        
-        if ($result->error) {
-            throw new Exception("Migration failed: " . $result->error->message);
+        // Check if it's a Railway or Supabase migration based on filename
+        if (strpos(basename($migration), 'railway_') === 0) {
+            runRailwayMigration($pdo, $migration);
+        } else {
+            runSupabaseMigration($migration);
         }
-        
-        echo "Migration completed successfully\n";
     }
     
-    echo "All migrations completed successfully!\n";
-} catch (Exception $e) {
-    echo "Error: " . $e->getMessage() . "\n";
-    exit(1);
+    echo "All migrations completed successfully.\n";
+    
+} catch (PDOException $e) {
+    echo "Database connection failed: " . $e->getMessage() . "\n";
 }

@@ -1,5 +1,8 @@
 <?php
 
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ClientException;
+
 class SupabaseAuth {
     private $supabaseUrl;
     private $supabaseKey;
@@ -13,11 +16,21 @@ class SupabaseAuth {
         $this->jwtSecret = getenv('JWT_SECRET_KEY');
     }
 
+    public function createClient() {
+        return new Client([
+            'base_uri' => $this->supabaseUrl,
+            'headers' => [
+                'apikey' => $this->supabaseServiceKey,
+                'Authorization' => 'Bearer ' . $this->supabaseServiceKey
+            ]
+        ]);
+    }
+
     public function signIn($email, $password) {
-        $client = new GuzzleHttp\Client();
+        $client = $this->createClient();
         try {
-            // Sign in with email and password
-            $response = $client->post($this->supabaseUrl . '/auth/v1/token?grant_type=password', [
+            // Sign in with email and password through Supabase Auth
+            $response = $client->post('/auth/v1/token?grant_type=password', [
                 'headers' => [
                     'apikey' => $this->supabaseKey,
                     'Content-Type' => 'application/json'
@@ -30,8 +43,12 @@ class SupabaseAuth {
 
             $authData = json_decode($response->getBody(), true);
 
-            // Fetch user data including role
-            $userResponse = $client->get($this->supabaseUrl . '/rest/v1/users?email=eq.' . urlencode($email), [
+            if (!isset($authData['user']['id'])) {
+                throw new \Exception('Invalid credentials');
+            }
+
+            // Get or create user profile in Supabase
+            $userResponse = $client->get('/rest/v1/profiles?id=eq.' . urlencode($authData['user']['id']), [
                 'headers' => [
                     'apikey' => $this->supabaseServiceKey,
                     'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
@@ -40,49 +57,80 @@ class SupabaseAuth {
                 ]
             ]);
 
-            $users = json_decode($userResponse->getBody(), true);
-            $currentUser = $users[0] ?? null;
+            $profiles = json_decode($userResponse->getBody(), true);
+            $currentUser = $profiles[0] ?? null;
             
-            // Merge auth data with user data
-            if ($currentUser) {
-                $authData['user']['role'] = $currentUser['role'] ?? 'user';
-            } else {
-                // If user not found in users table, create a new entry
-                $newUser = [
-                    'id' => $authData['user']['id'],
-                    'email' => $email,
-                    'role' => 'user'
-                ];
-                
-                $client->post($this->supabaseUrl . '/rest/v1/users', [
+            if (!$currentUser) {
+                // Create new profile in Supabase
+                $response = $client->post('/rest/v1/profiles', [
                     'headers' => [
                         'apikey' => $this->supabaseServiceKey,
                         'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                         'Content-Type' => 'application/json',
                         'Prefer' => 'return=representation'
                     ],
-                    'json' => $newUser
+                    'json' => [
+                        'id' => $authData['user']['id'],
+                        'email' => $email,
+                        'is_admin' => false,
+                        'is_premium' => false
+                    ]
                 ]);
                 
-                $authData['user']['role'] = 'user';
+                $currentUser = json_decode($response->getBody(), true)[0] ?? null;
             }
-            
+
+            // Check if user exists in Railway database
+            try {
+                $pdo = new PDO(
+                    "mysql:host=" . getenv('MYSQLHOST') . ";dbname=" . getenv('MYSQLDATABASE'),
+                    getenv('MYSQLUSER'),
+                    getenv('MYSQLPASSWORD')
+                );
+                $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                
+                $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
+                $stmt->execute([$email]);
+                $railwayUser = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$railwayUser) {
+                    // Create user in Railway if not exists
+                    $stmt = $pdo->prepare("INSERT INTO users (email, is_admin) VALUES (?, ?)");
+                    $stmt->execute([$email, $currentUser['is_admin'] ? 1 : 0]);
+                } else {
+                    // Update admin status in Supabase to match Railway
+                    if ($railwayUser['is_admin'] && !$currentUser['is_admin']) {
+                        $client->patch('/rest/v1/profiles?id=eq.' . urlencode($authData['user']['id']), [
+                            'headers' => [
+                                'apikey' => $this->supabaseServiceKey,
+                                'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
+                                'Content-Type' => 'application/json'
+                            ],
+                            'json' => [
+                                'is_admin' => true
+                            ]
+                        ]);
+                        $currentUser['is_admin'] = true;
+                    }
+                }
+            } catch (\PDOException $e) {
+                error_log('Railway DB Error: ' . $e->getMessage());
+                // Continue even if Railway DB fails - we'll use Supabase data
+            }
+
+            $authData['user']['is_admin'] = $currentUser['is_admin'] ?? false;
             return $authData;
-        } catch (GuzzleHttp\Exception\ClientException $e) {
+            
+        } catch (ClientException $e) {
             $response = $e->getResponse();
-            throw new Exception($response->getBody());
+            throw new \Exception($response->getBody());
         }
     }
 
     private function getUserSubscription($userId) {
-        $client = new GuzzleHttp\Client();
+        $client = $this->createClient();
         try {
-            $response = $client->get($this->supabaseUrl . '/rest/v1/subscriptions?user_id=eq.' . $userId . '&order=created_at.desc&limit=1', [
-                'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey
-                ]
-            ]);
+            $response = $client->get('/rest/v1/subscriptions?user_id=eq.' . $userId . '&order=created_at.desc&limit=1');
 
             $subscriptions = json_decode($response->getBody(), true);
             
@@ -104,7 +152,7 @@ class SupabaseAuth {
     }
 
     private function createLifetimeSubscription($userId) {
-        $client = new GuzzleHttp\Client();
+        $client = $this->createClient();
         try {
             $subscription = [
                 'user_id' => $userId,
@@ -114,10 +162,8 @@ class SupabaseAuth {
                 'current_period_end' => date('Y-m-d H:i:s', strtotime('+999 years'))
             ];
 
-            $response = $client->post($this->supabaseUrl . '/rest/v1/subscriptions', [
+            $response = $client->post('/rest/v1/subscriptions', [
                 'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
                     'Prefer' => 'return=minimal'
                 ],
@@ -140,43 +186,33 @@ class SupabaseAuth {
     }
 
     public function verifyApiKey($apiKey) {
-        $client = new GuzzleHttp\Client();
+        $client = $this->createClient();
         try {
             // First try to find user by new API key
-            $response = $client->get($this->supabaseUrl . '/rest/v1/users?api_token=eq.' . $apiKey, [
-                'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey
-                ]
-            ]);
+            $response = $client->get('/rest/v1/profiles?api_token=eq.' . $apiKey);
 
-            $users = json_decode($response->getBody(), true);
+            $profiles = json_decode($response->getBody(), true);
             
-            if (empty($users)) {
+            if (empty($profiles)) {
                 // If not found, try to find by old token field
-                $response = $client->get($this->supabaseUrl . '/rest/v1/users?token=eq.' . $apiKey, [
-                    'headers' => [
-                        'apikey' => $this->supabaseServiceKey,
-                        'Authorization' => 'Bearer ' . $this->supabaseServiceKey
-                    ]
-                ]);
+                $response = $client->get('/rest/v1/profiles?token=eq.' . $apiKey);
+
+                $profiles = json_decode($response->getBody(), true);
                 
-                $users = json_decode($response->getBody(), true);
-                
-                if (!empty($users)) {
+                if (!empty($profiles)) {
                     // Found an old token, migrate it to new system
-                    $this->migrateOldToken($users[0]['id'], $apiKey);
+                    $this->migrateOldToken($profiles[0]['id'], $apiKey);
                 }
             }
             
-            if (empty($users)) {
+            if (empty($profiles)) {
                 return false;
             }
 
-            $user = $users[0];
+            $profile = $profiles[0];
             
             // For old tokens or migrated tokens, create/get subscription
-            $subscription = $this->getUserSubscription($user['id']);
+            $subscription = $this->getUserSubscription($profile['id']);
             
             if (!$subscription || $subscription['status'] !== 'active') {
                 return false;
@@ -184,12 +220,12 @@ class SupabaseAuth {
 
             // Update expiration if needed
             if (isset($subscription['current_period_end']) && 
-                (!isset($user['api_token_expires']) || $subscription['current_period_end'] !== $user['api_token_expires'])) {
-                $this->updateApiKeyExpiration($user['id'], $subscription['current_period_end']);
+                (!isset($profile['api_token_expires']) || $subscription['current_period_end'] !== $profile['api_token_expires'])) {
+                $this->updateApiKeyExpiration($profile['id'], $subscription['current_period_end']);
             }
 
             return [
-                'user' => $user,
+                'profile' => $profile,
                 'subscription' => $subscription
             ];
         } catch (Exception $e) {
@@ -198,13 +234,11 @@ class SupabaseAuth {
         }
     }
 
-    private function migrateOldToken($userId, $oldToken) {
+    private function migrateOldToken($profileId, $oldToken) {
         try {
-            $client = new GuzzleHttp\Client();
-            $response = $client->patch($this->supabaseUrl . '/rest/v1/users?id=eq.' . $userId, [
+            $client = $this->createClient();
+            $response = $client->patch('/rest/v1/profiles?id=eq.' . $profileId, [
                 'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
                     'Prefer' => 'return=minimal'
                 ],
@@ -219,9 +253,9 @@ class SupabaseAuth {
         }
     }
 
-    public function generateApiKey($userId) {
+    public function generateApiKey($profileId) {
         // Check subscription status
-        $subscription = $this->getUserSubscription($userId);
+        $subscription = $this->getUserSubscription($profileId);
         
         if (!$subscription || $subscription['status'] !== 'active') {
             throw new Exception('No active subscription found');
@@ -232,12 +266,10 @@ class SupabaseAuth {
         // Set expiration based on subscription end date
         $expiresAt = $subscription['current_period_end'] ?? date('Y-m-d H:i:s', strtotime('+999 years'));
 
-        $client = new GuzzleHttp\Client();
+        $client = $this->createClient();
         try {
-            $response = $client->patch($this->supabaseUrl . '/rest/v1/users?id=eq.' . $userId, [
+            $response = $client->patch('/rest/v1/profiles?id=eq.' . $profileId, [
                 'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
                     'Prefer' => 'return=minimal'
                 ],
@@ -267,13 +299,11 @@ class SupabaseAuth {
         }
     }
 
-    private function updateApiKeyExpiration($userId, $newExpiration) {
-        $client = new GuzzleHttp\Client();
+    private function updateApiKeyExpiration($profileId, $newExpiration) {
+        $client = $this->createClient();
         try {
-            $client->patch($this->supabaseUrl . '/rest/v1/users?id=eq.' . $userId, [
+            $client->patch('/rest/v1/profiles?id=eq.' . $profileId, [
                 'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
                     'Prefer' => 'return=minimal'
                 ],
@@ -288,7 +318,7 @@ class SupabaseAuth {
     }
 
     public function refreshToken($refreshToken) {
-        $client = new GuzzleHttp\Client();
+        $client = new Client();
         try {
             $response = $client->post($this->supabaseUrl . '/auth/v1/token?grant_type=refresh_token', [
                 'headers' => [
@@ -306,13 +336,13 @@ class SupabaseAuth {
         }
     }
 
-    public function generateJWT($userId, $email) {
+    public function generateJWT($profileId, $email) {
         $issuedAt = time();
         $expiresAt = $issuedAt + (60 * 60 * 24); // 24 hours
 
         $payload = [
             'iss' => $this->supabaseUrl,
-            'sub' => $userId,
+            'sub' => $profileId,
             'email' => $email,
             'iat' => $issuedAt,
             'exp' => $expiresAt
@@ -329,8 +359,8 @@ class SupabaseAuth {
         }
     }
 
-    public function generateExtensionToken($userId) {
-        $client = new GuzzleHttp\Client();
+    public function generateExtensionToken($profileId) {
+        $client = $this->createClient();
         try {
             // Generate a secure random token
             $token = bin2hex(random_bytes(32));
@@ -340,10 +370,8 @@ class SupabaseAuth {
             $expirationTime = $currentTime + (30 * 24 * 60 * 60);
             
             // Deactivate any existing active tokens for this user
-            $client->patch($this->supabaseUrl . '/rest/v1/extension_tokens', [
+            $client->patch('/rest/v1/extension_tokens', [
                 'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
                     'Prefer' => 'return=minimal'
                 ],
@@ -351,21 +379,19 @@ class SupabaseAuth {
                     'is_active' => false
                 ],
                 'query' => [
-                    'user_id' => 'eq.' . $userId,
+                    'profile_id' => 'eq.' . $profileId,
                     'is_active' => 'eq.true'
                 ]
             ]);
 
             // Store the new token
-            $response = $client->post($this->supabaseUrl . '/rest/v1/extension_tokens', [
+            $response = $client->post('/rest/v1/extension_tokens', [
                 'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
                     'Prefer' => 'return=minimal'
                 ],
                 'json' => [
-                    'user_id' => $userId,
+                    'profile_id' => $profileId,
                     'token' => $token,
                     'created_at' => date('Y-m-d H:i:s', $currentTime),
                     'expires_at' => date('Y-m-d H:i:s', $expirationTime),
@@ -384,18 +410,14 @@ class SupabaseAuth {
     }
 
     public function verifyExtensionToken($token) {
-        $client = new GuzzleHttp\Client();
+        $client = $this->createClient();
         try {
             // Query the token
-            $response = $client->get($this->supabaseUrl . '/rest/v1/extension_tokens', [
-                'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey
-                ],
+            $response = $client->get('/rest/v1/extension_tokens', [
                 'query' => [
                     'token' => 'eq.' . $token,
                     'is_active' => 'eq.true',
-                    'select' => 'user_id,expires_at'
+                    'select' => 'profile_id,expires_at'
                 ]
             ]);
 
@@ -417,7 +439,7 @@ class SupabaseAuth {
 
             return [
                 'valid' => true,
-                'user_id' => $tokenInfo['user_id'],
+                'profile_id' => $tokenInfo['profile_id'],
                 'expires_at' => $expirationTime
             ];
         } catch (Exception $e) {
@@ -427,12 +449,10 @@ class SupabaseAuth {
     }
 
     private function deactivateToken($token) {
-        $client = new GuzzleHttp\Client();
+        $client = $this->createClient();
         try {
-            $client->patch($this->supabaseUrl . '/rest/v1/extension_tokens', [
+            $client->patch('/rest/v1/extension_tokens', [
                 'headers' => [
-                    'apikey' => $this->supabaseServiceKey,
-                    'Authorization' => 'Bearer ' . $this->supabaseServiceKey,
                     'Content-Type' => 'application/json',
                     'Prefer' => 'return=minimal'
                 ],
@@ -448,11 +468,11 @@ class SupabaseAuth {
         }
     }
 
-    public function logActivity($userId, $userEmail, $action, $details = null) {
+    public function logActivity($profileId, $profileEmail, $action, $details = null) {
         try {
             $data = [
-                'user_id' => $userId,
-                'user_email' => $userEmail,
+                'profile_id' => $profileId,
+                'profile_email' => $profileEmail,
                 'action' => $action,
                 'details' => $details ? json_encode($details) : null
             ];

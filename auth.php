@@ -39,17 +39,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $authData = $supabase->signIn($email, $password);
         
         if (isset($authData['access_token'])) {
-            // Get user role from database
+            // Get user data from database
             $client = $supabase->createClient();
-            $userQuery = $client->from('users')
+            $userQuery = $client->from('profiles')
                 ->select('*')
-                ->eq('email', $email)
+                ->eq('id', $authData['user']['id'])
                 ->execute();
             
             $user = $userQuery->data[0] ?? null;
-            $role = $user['role'] ?? 'user';
+            $isAdmin = $user['is_admin'] ?? false;
             
-            error_log('User role from database: ' . $role);
+            error_log('User is_admin from database: ' . ($isAdmin ? 'true' : 'false'));
             
             // Store session data
             $_SESSION['user'] = [
@@ -57,13 +57,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'email' => $authData['user']['email'],
                 'access_token' => $authData['access_token'],
                 'refresh_token' => $authData['refresh_token'],
-                'role' => $role
+                'is_admin' => $isAdmin
             ];
 
             error_log('Session data: ' . json_encode($_SESSION['user']));
 
-            // Redirect based on role
-            if ($role === 'admin') {
+            // Redirect based on admin status
+            if ($isAdmin) {
                 error_log('Redirecting to admin dashboard');
                 header('Location: admin_dashboard.php');
             } else {
